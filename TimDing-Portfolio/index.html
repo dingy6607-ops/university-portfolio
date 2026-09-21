@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>丁一铭 Tim Ding · 个人博客 &amp; 作品集</title>
+<meta name="description" content="丁一铭（Tim Ding）的个人博客与作品集：人工智能专业大一在读，记录学习文章、课程作品、数据图表与成长轨迹。" />
+<link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+
+<!-- ============ 进门人机验证（通过后才加载站点数据） ============ -->
+<div class="gate" id="gate" hidden>
+  <div class="gate-box">
+    <div class="gate-logo">丁一铭 <span>Tim Ding</span></div>
+    <h1 data-i18n="gate.title">请确认你是真人</h1>
+    <p>
+      <span data-i18n="gate.desc">进入前需要完成一次人机验证，通过后 24 小时内无需再次验证。</span><br />
+      <span class="gate-sub" data-i18n="gate.descEn">Human check required before entering. Valid for 24 hours.</span>
+    </p>
+    <div class="gate-ts">
+      <div class="cf-turnstile" data-sitekey="0x4AAAAAAE94-kX-1-TEp6MT" data-theme="dark"
+           data-callback="gateVerified" data-error-callback="gateError" data-expired-callback="gateError"></div>
+    </div>
+    <p class="gate-err" id="gateErr"></p>
+    <div class="gate-loading" id="gateLoading"><span class="dot"></span><span data-i18n="gate.entering">验证通过，正在进入…</span></div>
+  </div>
+</div>
+
+<div id="progressWrap"><div id="progressBar"></div></div>
+<canvas id="bgCanvas" aria-hidden="true"></canvas>
+<div class="glow glow-a" aria-hidden="true"></div>
+<div class="glow glow-b" aria-hidden="true"></div>
+
+<header class="nav" id="nav">
+  <a class="brand" href="#home">
+    <span class="brand-avatar" id="brandAvatar">丁</span>
+    <span class="brand-text"><strong id="brandName">丁一铭</strong><em id="brandEn">Tim Ding</em></span>
+  </a>
+  <nav class="nav-links" id="navLinks">
+    <a href="#home" class="nav-link active" data-i18n="nav.home">首页</a>
+    <a href="#about" class="nav-link" data-i18n="nav.about">关于</a>
+    <a href="#blog" class="nav-link" data-i18n="nav.blog">文章</a>
+    <a href="#works" class="nav-link" data-i18n="nav.works">作品</a>
+    <a href="#charts" class="nav-link" data-i18n="nav.charts">数据</a>
+    <a href="#contact" class="nav-link" data-i18n="nav.contact">联系</a>
+  </nav>
+  <div class="nav-actions">
+    <button class="icon-btn" id="themeBtn" data-i18n-title="btn.theme" title="切换深浅色">🌙</button>
+    <button class="icon-btn lang-btn" id="langBtn" data-i18n="btn.lang" data-i18n-title="btn.lang" title="EN">EN</button>
+    <button class="btn btn-ghost only-author" id="exportBtn" data-i18n-title="btn.export" data-i18n="btn.export">导出</button>
+    <label class="btn btn-ghost only-author" for="importInput" data-i18n="btn.import">导入</label>
+    <input type="file" id="importInput" accept="application/json,.json" hidden />
+    <button class="btn btn-primary only-author" id="uploadBtn" data-i18n="btn.upload">上传作品</button>
+    <button class="icon-btn only-author" id="seedBtn" data-i18n-title="seed.title" title="自动同步 seed.json">🔄</button>
+    <button class="icon-btn" id="lockBtn" data-i18n-title="author.title" title="作者解锁">🔒</button>
+  </div>
+  <button class="nav-toggle" id="navToggle" aria-label="菜单">☰</button>
+</header>
+
+<main>
+
+  <!-- ============ HERO ============ -->
+  <section id="home" class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow"><span class="dot"></span><span id="heroEyebrow">人工智能 · 大一在读 · 正在探索机器学习的世界</span></p>
+      <h1 class="hero-title">丁一铭<span class="grad"> Tim Ding</span></h1>
+      <p class="hero-type"><span data-i18n="hero.type">我是一名</span> <span id="typewriter"></span><span class="caret"></span></p>
+      <p class="hero-desc" id="heroDesc">喜欢把复杂的东西拆开、弄懂、再重新拼起来。这里存放我的课程作品、学习笔记与数据分析实践。</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#works" data-i18n="hero.viewWorks">浏览作品集</a>
+        <a class="btn btn-ghost" href="#blog" data-i18n="hero.readPosts">读我的文章</a>
+        <button class="btn btn-ghost only-author" id="editProfileBtn" data-i18n="hero.editProfile">✎ 编辑资料</button>
+      </div>
+      <div class="stats" id="stats"></div>
+    </div>
+    <div class="scroll-hint"><span data-i18n="hero.scroll">向下滚动</span><i></i></div>
+  </section>
+
+  <!-- ============ ABOUT ============ -->
+  <section id="about" class="section">
+    <div class="section-head reveal">
+      <div>
+        <h2 data-i18n="about.title">关于我</h2>
+      </div>
+    </div>
+    <div class="about-grid">
+      <article class="card bio-card reveal">
+        <div class="bio-head">
+          <div class="avatar-wrap">
+            <img id="profileAvatar" class="avatar-lg" alt="头像" />
+            <span class="avatar-ring"></span>
+          </div>
+          <div class="bio-title">
+            <h3 id="aboutName">丁一铭</h3>
+            <p class="muted" id="aboutRole">人工智能专业 · 大一在读</p>
+            <p class="tagline" id="aboutTagline"></p>
+          </div>
+          <button class="icon-btn only-author" id="editProfileBtn2" data-i18n-title="hero.editProfile" title="编辑资料">✎</button>
+        </div>
+        <div class="markdown-body" id="bioBody"></div>
+        <div class="contact-chips" id="aboutChips"></div>
+      </article>
+      <div class="side-col">
+        <article class="card reveal">
+          <div class="card-head"><h3 data-i18n="about.skills">技能图谱</h3><span class="muted small" data-i18n="about.skillsHint">进度可自行调整</span></div>
+          <ul class="skills" id="skillsList"></ul>
+        </article>
+        <article class="card reveal">
+          <div class="card-head"><h3 data-i18n="about.timeline">成长时间线</h3><span class="muted small" data-i18n="about.timelineHint">按时间倒序</span></div>
+          <ol class="timeline" id="timeline"></ol>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BLOG ============ -->
+  <section id="blog" class="section">
+    <div class="section-head reveal">
+      <div>
+        <h2 data-i18n="blog.title">文章</h2>
+        <p data-i18n="blog.sub">课程笔记、读书报告与技术复盘，支持 Markdown 写作与 .md / .txt 导入。</p>
+      </div>
+      <div class="head-actions">
+        <button class="btn btn-primary only-author" id="newPostBtn" data-i18n="blog.new">写文章</button>
+        <label class="btn btn-ghost only-author" for="postFileInput" data-i18n="blog.import">导入 .md / .txt</label>
+        <input type="file" id="postFileInput" accept=".md,.markdown,.txt" multiple hidden />
+      </div>
+    </div>
+    <div class="toolbar reveal">
+      <input id="postSearch" class="input" data-i18n-ph="blog.search" placeholder="搜索标题 / 标签 / 正文…" />
+      <div class="chips" id="postTagFilter"></div>
+    </div>
+    <div class="grid grid-3" id="postGrid"></div>
+    <div class="empty" id="postEmpty" data-i18n="blog.empty" hidden>还没有文章，点击「写文章」或导入 Markdown 文件开始吧。</div>
+  </section>
+
+  <!-- ============ WORKS ============ -->
+  <section id="works" class="section">
+    <div class="section-head reveal">
+      <div>
+        <h2 data-i18n="works.title">作品集</h2>
+        <p data-i18n="works.sub">上传图片、PDF、PPT、Excel、CSV、代码压缩包等任意文件，本地保存并可直接预览。</p>
+      </div>
+      <div class="head-actions">
+        <button class="btn btn-primary only-author" id="uploadBtn2" data-i18n="works.upload">上传作品</button>
+      </div>
+    </div>
+
+    <div class="dropzone reveal only-author" id="dropzone">
+      <div class="dz-icon">⬆</div>
+      <div class="dz-text">
+        <strong data-i18n="works.dragTitle">把文件拖到这里</strong>
+        <span data-i18n="works.dragSub">或点击选择文件 —— 支持图片 / PDF / PPT / Excel / CSV / 压缩包，可多选</span>
+      </div>
+    </div>
+    <input type="file" id="workFileInput" multiple hidden />
+
+    <div class="toolbar reveal">
+      <input id="workSearch" class="input" data-i18n-ph="works.search" placeholder="搜索作品 / 标签 / 文件名…" />
+      <div class="chips" id="workCats"></div>
+    </div>
+    <div class="grid grid-3" id="workGrid"></div>
+    <div class="empty" id="workEmpty" data-i18n="works.empty" hidden>作品库还是空的，上传第一个作品吧。</div>
+  </section>
+
+  <!-- ============ CHARTS ============ -->
+  <section id="charts" class="section">
+    <div class="section-head reveal">
+      <div>
+        <h2 data-i18n="charts.title">数据图表</h2>
+        <p data-i18n="charts.sub">上传 CSV 或手动录入数据，自动生成折线图、柱状图、饼图与散点图。</p>
+      </div>
+      <div class="head-actions">
+        <button class="btn btn-primary only-author" id="newChartBtn" data-i18n="charts.new">新建图表</button>
+      </div>
+    </div>
+    <div class="grid grid-2" id="chartGrid"></div>
+    <div class="empty" id="chartEmpty" data-i18n="charts.empty" hidden>还没有图表，点击「新建图表」或上传 CSV 数据试试。</div>
+  </section>
+
+  <!-- ============ CONTACT ============ -->
+  <section id="contact" class="section">
+    <div class="card contact-card reveal">
+      <div class="contact-bg"></div>
+      <h2 data-i18n="contact.title">联系我</h2>
+      <p class="muted" data-i18n="contact.sub">无论是课程合作、技术交流，还是只想聊聊 AI，都欢迎给我发邮件。</p>
+      <div class="contact-mail">
+        <a id="mailLink" class="mail-address" href="#">dym18019215657@outlook.com</a>
+        <button class="btn btn-ghost" id="copyMailBtn" data-i18n="contact.copy">复制邮箱</button>
+      </div>
+      <div class="contact-chips" id="socialLinks"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p id="footerLine1"></p>
+</footer>
+
+<!-- ============ MODAL: 资料编辑 ============ -->
+<div class="modal" id="profileModal">
+  <div class="modal-panel">
+    <div class="modal-head"><h3 data-i18n="profile.title">编辑个人资料</h3><button class="icon-btn close" data-close>✕</button></div>
+    <div class="modal-body form">
+      <div class="row">
+        <label><span data-i18n="profile.name">中文名</span><input id="pName" class="input" /></label>
+        <label><span data-i18n="profile.enName">英文名</span><input id="pEnName" class="input" /></label>
+      </div>
+      <div class="row">
+        <label><span data-i18n="profile.role">专业 / 年级</span><input id="pRole" class="input" /></label>
+        <label><span data-i18n="profile.email">邮箱</span><input id="pEmail" class="input" type="email" /></label>
+      </div>
+      <label><span data-i18n="profile.tagline">首页一句话标签</span><input id="pTagline" class="input" /></label>
+      <label><span data-i18n="profile.hero">首页简介</span><textarea id="pHero" class="input" rows="2"></textarea></label>
+      <div class="row">
+        <label><span data-i18n="profile.avatar">头像</span>
+          <div class="file-line">
+            <button class="btn btn-ghost" id="pAvatarBtn" data-i18n="btn.chooseImage">选择图片</button>
+            <img id="pAvatarPreview" class="avatar-sm" alt="" />
+            <input type="file" id="pAvatar" accept="image/*" hidden />
+          </div>
+        </label>
+      </div>
+      <label><span data-i18n="profile.bio">自我介绍（支持 Markdown）</span><textarea id="pBio" class="input" rows="7"></textarea></label>
+      <label><span data-i18n="profile.skills">技能（每行一条：名称,分值）</span><textarea id="pSkills" class="input" rows="6"></textarea></label>
+      <label><span data-i18n="profile.timeline">时间线（每行一条：时间 | 标题 | 描述）</span><textarea id="pTimeline" class="input" rows="5"></textarea></label>
+      <label><span data-i18n="profile.socials">社交链接（每行一条：名称 | 网址）</span><textarea id="pSocials" class="input" rows="4"></textarea></label>
+      <p class="muted small" id="profileLangHint"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-i18n="btn.cancel" data-close>取消</button>
+      <button class="btn btn-primary" id="saveProfileBtn" data-i18n="profile.save">保存资料</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: 文章编辑 ============ -->
+<div class="modal" id="postModal">
+  <div class="modal-panel wide">
+    <div class="modal-head">
+      <h3 id="postModalTitle">写文章</h3>
+      <button class="icon-btn close" data-close>✕</button>
+    </div>
+    <div class="modal-body form">
+      <div class="row">
+        <label><span data-i18n="post.title">标题</span><input id="postTitle" class="input" data-i18n-ph="post.titlePh" placeholder="例如：线性回归手记" /></label>
+        <label><span data-i18n="post.date">日期</span><input id="postDate" class="input" type="date" /></label>
+      </div>
+      <label><span data-i18n="post.tags">标签（逗号分隔）</span><input id="postTags" class="input" data-i18n-ph="post.tagsPh" placeholder="机器学习, 课程笔记" /></label>
+      <label><span data-i18n="post.summary">摘要</span><textarea id="postSummary" class="input" rows="2" data-i18n-ph="post.summaryPh" placeholder="一句话概括这篇文章"></textarea></label>
+      <div class="md-tools">
+        <button class="tool" data-cmd="undo" data-i18n-title="editor.undo" title="撤销">↶</button>
+        <button class="tool" data-cmd="redo" data-i18n-title="editor.redo" title="重做">↷</button>
+        <span class="tool-sep"></span>
+        <button class="tool" data-block="h2" data-i18n-title="editor.h2" title="二级标题">H2</button>
+        <button class="tool" data-block="h3" data-i18n-title="editor.h3" title="三级标题">H3</button>
+        <button class="tool" data-block="p" data-i18n-title="editor.body" title="正文">P</button>
+        <span class="tool-sep"></span>
+        <button class="tool" data-cmd="bold" data-i18n-title="editor.bold" title="加粗"><b>B</b></button>
+        <button class="tool" data-cmd="italic" data-i18n-title="editor.italic" title="斜体"><i>I</i></button>
+        <button class="tool" data-cmd="underline" data-i18n-title="editor.underline" title="下划线"><u>U</u></button>
+        <button class="tool" data-cmd="strikeThrough" data-i18n-title="editor.strike" title="删除线"><s>S</s></button>
+        <span class="tool-sep"></span>
+        <button class="tool" data-cmd="insertUnorderedList" data-i18n-title="editor.list" title="无序列表">•</button>
+        <button class="tool" data-cmd="insertOrderedList" data-i18n-title="editor.ordered" title="有序列表">1.</button>
+        <button class="tool" data-block="blockquote" data-i18n-title="editor.quote" title="引用">❝</button>
+        <button class="tool" data-block="pre" data-i18n-title="editor.codeblock" title="代码块">{ }</button>
+        <span class="tool-sep"></span>
+        <button class="tool" data-cmd="justifyLeft" data-i18n-title="editor.alignLeft" title="左对齐">⇤</button>
+        <button class="tool" data-cmd="justifyCenter" data-i18n-title="editor.alignCenter" title="居中">↔</button>
+        <button class="tool" data-cmd="justifyRight" data-i18n-title="editor.alignRight" title="右对齐">⇥</button>
+        <button class="tool" data-md="link" data-i18n-title="editor.link" title="链接">🔗</button>
+        <button class="tool" data-md="hr" data-i18n-title="editor.hr" title="分割线">—</button>
+        <button class="tool" data-cmd="removeFormat" data-i18n-title="editor.clear" title="清除格式">🧹</button>
+        <span class="tool-sep"></span>
+        <button class="tool" id="mdImageBtn" data-i18n-title="editor.image" title="插入图片">🖼</button>
+        <button class="tool" id="mdTableBtn" data-i18n-title="editor.table" title="插入表格">▦</button>
+        <button class="tool" id="mdChartBtn" data-i18n-title="editor.chart" title="插入图表">📊</button>
+        <input type="file" id="mdImageInput" accept="image/*" multiple hidden />
+        <span class="spacer"></span>
+        <span class="muted small" id="postWordCount"></span>
+      </div>
+      <div class="table-panel" id="tablePanel" hidden>
+        <label><span data-i18n="editor.cols">列数</span><input id="tblCols" class="input tiny" type="number" min="1" max="10" value="3" /></label>
+        <label><span data-i18n="editor.rows">行数</span><input id="tblRows" class="input tiny" type="number" min="1" max="30" value="3" /></label>
+        <button class="btn btn-primary small" id="tblInsertBtn" data-i18n="editor.insert">插入</button>
+      </div>
+      <div id="postEditor" class="rich-editor markdown-body" contenteditable="true" spellcheck="false"></div>
+      <p class="muted small" id="postFormatHint" hidden></p>
+      <div class="row hint-row">
+        <span class="muted small" data-i18n="editor.tip">支持直接粘贴或拖拽图片到编辑区</span>
+        <span class="spacer"></span>
+        <span class="muted small" id="postLangHint"></span>
+        <label class="btn btn-ghost small" for="postModalFile" data-i18n="post.import">导入文件</label>
+        <input type="file" id="postModalFile" accept=".md,.markdown,.txt,.html" hidden />
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-danger" id="deletePostBtn" data-i18n="btn.delete" hidden>删除</button>
+      <button class="btn btn-ghost" data-i18n="btn.cancel" data-close>取消</button>
+      <button class="btn btn-primary" id="savePostBtn" data-i18n="post.save">保存文章</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: 文章阅读 ============ -->
+<div class="modal" id="postViewModal">
+  <div class="modal-panel wide">
+    <div class="modal-head">
+      <h3 id="pvTitle"></h3>
+      <button class="icon-btn close" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="post-meta" id="pvMeta"></div>
+      <div class="markdown-body" id="pvBody"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-i18n="btn.close" data-close>关闭</button>
+      <button class="btn btn-ghost" id="pvFullBtn" data-i18n="reader.fullscreen">全屏阅读</button>
+      <button class="btn btn-primary" id="pvEditBtn" data-i18n="blog.editThis">编辑这篇文章</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: 上传作品 ============ -->
+<div class="modal" id="uploadModal">
+  <div class="modal-panel">
+    <div class="modal-head"><h3 data-i18n="up.title">上传作品</h3><button class="icon-btn close" data-close>✕</button></div>
+    <div class="modal-body form">
+      <div class="row">
+        <label><span data-i18n="up.category">分类</span>
+          <select id="upCategory" class="input">
+            <option value="图片" data-i18n="cat.图片">图片</option>
+            <option value="PPT" data-i18n="cat.PPT">PPT / 演示</option>
+            <option value="文档" data-i18n="cat.文档">文档 / PDF</option>
+            <option value="数据表" data-i18n="cat.数据表">数据表 / CSV</option>
+            <option value="代码" data-i18n="cat.代码">代码 / 压缩包</option>
+            <option value="其他" selected data-i18n="cat.其他">其他</option>
+          </select>
+        </label>
+        <label><span data-i18n="up.tags">标签（逗号分隔，统一）</span><input id="upTags" class="input" data-i18n-ph="up.tagsPh" placeholder="课程作业, Python" /></label>
+      </div>
+      <div id="upFilesList" class="up-list"></div>
+      <p class="muted small" id="upHint" data-i18n="up.hint">提示：大文件建议控制在几十 MB 内；数据会保存在本机浏览器中。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-i18n="btn.cancel" data-close>取消</button>
+      <button class="btn btn-primary" id="saveWorksBtn" data-i18n="up.save">保存到作品集</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: 作品详情 ============ -->
+<div class="modal" id="workViewModal">
+  <div class="modal-panel wide">
+    <div class="modal-head">
+      <h3 id="wvTitle"></h3>
+      <button class="icon-btn close" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="wvInfo" class="work-info">
+        <div class="post-meta" id="wvMeta"></div>
+        <div class="markdown-body" id="wvDesc"></div>
+        <div class="row" id="wvActions">
+          <a class="btn btn-primary" id="wvDownload" download data-i18n="btn.download">下载文件</a>
+          <button class="btn btn-ghost" id="wvFullBtn" data-i18n="viewer.fullscreen">全屏查看</button>
+          <button class="btn btn-ghost only-author" id="wvEditBtn" data-i18n="works.editInfo">编辑信息</button>
+          <button class="btn btn-danger only-author" id="wvDeleteBtn" data-i18n="btn.delete">删除</button>
+        </div>
+        <div id="wvEditForm" class="form" hidden>
+          <div class="row">
+            <label><span data-i18n="post.title">标题</span><input id="wvEditTitle" class="input" /></label>
+            <label><span data-i18n="up.category">分类</span><input id="wvEditCat" class="input" /></label>
+          </div>
+          <label><span data-i18n="up.tags">标签（逗号分隔）</span><input id="wvEditTags" class="input" /></label>
+          <label><span data-i18n="up.descPh">一句话描述（可选）</span><textarea id="wvEditDesc" class="input" rows="4"></textarea></label>
+          <button class="btn btn-primary" id="wvSaveEditBtn" data-i18n="btn.save">保存修改</button>
+        </div>
+      </div>
+      <div id="wvPreview" class="preview-area"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: 图表 ============ -->
+<div class="modal" id="chartModal">
+  <div class="modal-panel wide">
+    <div class="modal-head"><h3 id="chartModalTitle">新建图表</h3><button class="icon-btn close" data-close>✕</button></div>
+    <div class="modal-body form">
+      <div class="row">
+        <label><span data-i18n="chart.name">图表名称</span><input id="chName" class="input" data-i18n-ph="chart.namePh" placeholder="每周学习时长" /></label>
+        <label><span data-i18n="chart.type">类型</span>
+          <select id="chType" class="input">
+            <option value="line" data-i18n="type.line">折线图</option>
+            <option value="bar" data-i18n="type.bar">柱状图</option>
+            <option value="pie" data-i18n="type.pie">饼图</option>
+            <option value="scatter" data-i18n="type.scatter">散点图</option>
+          </select>
+        </label>
+      </div>
+      <div class="chart-data">
+        <div class="grid-tools">
+          <span class="muted small" data-i18n="chart.dataGrid">数据表（可直接点击单元格编辑）</span>
+          <span class="spacer"></span>
+          <button class="tool" id="chAddRow" data-i18n-title="chart.addRow" title="增加一行">＋</button>
+          <button class="tool" id="chAddCol" data-i18n-title="chart.addCol" title="增加一列">＋</button>
+          <button class="tool" id="chDelRow" data-i18n-title="chart.delRow" title="减少一行">－</button>
+          <button class="tool" id="chDelCol" data-i18n-title="chart.delCol" title="减少一列">－</button>
+          <button class="tool" id="chToggleCsv" data-i18n-title="chart.toggleCsv" title="CSV 源码">CSV</button>
+        </div>
+        <div class="data-grid-wrap"><table class="data-grid" id="chGrid"></table></div>
+        <label id="chCsvWrap" hidden><span data-i18n="chart.csv">数据（CSV：第一行为表头，第一列是横轴标签）</span>
+          <textarea id="chCsv" class="input code" rows="7" data-i18n-ph="chart.csvPh" placeholder="周次,学习时长,刷题数"></textarea>
+        </label>
+      </div>
+      <div class="row">
+        <label class="btn btn-ghost" for="chFile" data-i18n="chart.uploadCsv">上传 CSV</label>
+        <input type="file" id="chFile" accept=".csv,.txt,.tsv" hidden />
+        <span class="muted small" id="chInfo"></span>
+      </div>
+      <label><span data-i18n="charts.note">备注</span><input id="chNote" class="input" data-i18n-ph="chart.notePh" placeholder="备注（可选）" /></label>
+      <div class="chart-preview"><canvas id="chPreviewCanvas"></canvas><div class="chart-tip" id="chTip" hidden></div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-danger" id="deleteChartBtn" data-i18n="btn.delete" hidden>删除</button>
+      <button class="btn btn-ghost" data-i18n="btn.cancel" data-close>取消</button>
+      <button class="btn btn-primary" id="saveChartBtn" data-i18n="chart.save">保存图表</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: 作者解锁 / 访客只读 ============ -->
+<div class="modal" id="lockModal">
+  <div class="modal-panel">
+    <div class="modal-head"><h3 data-i18n="author.title">作者解锁</h3><button class="icon-btn close" data-close>✕</button></div>
+    <div class="modal-body form">
+      <p class="muted small" id="lockTip"></p>
+      <label><span data-i18n="author.pwd">编辑密码</span>
+        <input id="lockPwd" class="input" type="password" data-i18n-ph="author.pwdPh" placeholder="请输入编辑密码" />
+      </label>
+      <label><span data-i18n="author.newPwd">修改密码（留空则不改）</span>
+        <input id="lockNewPwd" class="input" type="password" />
+      </label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-i18n="btn.cancel" data-close>取消</button>
+      <button class="btn btn-ghost" id="lockOffBtn" data-i18n="author.lockBtn">锁定为只读</button>
+      <button class="btn btn-primary" id="lockOnBtn" data-i18n="author.unlockBtn">解锁编辑</button>
+    </div>
+  </div>
+</div>
+
+<div id="toastWrap" class="toast-wrap"></div>
+
+<!-- ============ 全屏阅读器（文章） ============ -->
+<div class="reader" id="readerOverlay" hidden>
+  <div class="reader-top">
+    <button class="icon-btn" id="readerBack" data-i18n-title="btn.back" title="返回">✕</button>
+    <div class="reader-title" id="readerTitle"></div>
+    <div class="reader-tools">
+      <button class="icon-btn" id="readerTocBtn" data-i18n-title="reader.toc" title="目录">☰</button>
+      <button class="icon-btn" id="readerFontDown" data-i18n-title="reader.fontDown" title="缩小字号">A-</button>
+      <button class="icon-btn" id="readerFontUp" data-i18n-title="reader.fontUp" title="放大字号">A+</button>
+      <button class="btn btn-ghost small" id="readerFsBtn" data-i18n="reader.fullscreen">全屏阅读</button>
+    </div>
+  </div>
+  <div class="reader-progress"><span id="readerBar"></span></div>
+  <div class="reader-body" id="readerScroll">
+    <aside class="reader-toc" id="readerToc"></aside>
+    <article class="markdown-body" id="readerBody"></article>
+  </div>
+</div>
+
+<!-- ============ 全屏查看器（文件） ============ -->
+<div class="viewer" id="viewerOverlay" hidden>
+  <div class="viewer-top">
+    <span class="viewer-name" id="viewerName"></span>
+    <button class="btn btn-ghost small" id="viewerExitBtn" data-i18n="viewer.exit">退出全屏</button>
+  </div>
+  <div class="viewer-stage" id="viewerStage"></div>
+</div>
+
+<!-- 语言切换过场动画 -->
+<div class="lang-veil" id="langVeil" aria-hidden="true">
+  <span class="veil-bar"></span>
+  <span class="veil-word" id="langVeilWord">EN</span>
+</div>
+
+<script src="assets/js/store.js"></script>
+<script src="assets/js/i18n.js"></script>
+<script src="assets/js/markdown.js"></script>
+<script src="assets/js/charts.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
