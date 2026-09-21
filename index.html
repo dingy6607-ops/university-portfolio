@@ -9,6 +9,24 @@
 </head>
 <body>
 
+<!-- ============ 进门人机验证（通过后才加载站点数据） ============ -->
+<div class="gate" id="gate" hidden>
+  <div class="gate-box">
+    <div class="gate-logo">丁一铭 <span>Tim Ding</span></div>
+    <h1 data-i18n="gate.title">请确认你是真人</h1>
+    <p>
+      <span data-i18n="gate.desc">进入前需要完成一次人机验证，通过后 24 小时内无需再次验证。</span><br />
+      <span class="gate-sub" data-i18n="gate.descEn">Human check required before entering. Valid for 24 hours.</span>
+    </p>
+    <div class="gate-ts">
+      <div class="cf-turnstile" data-sitekey="0x4AAAAAAE94-kX-1-TEp6MT" data-theme="dark"
+           data-callback="gateVerified" data-error-callback="gateError" data-expired-callback="gateError"></div>
+    </div>
+    <p class="gate-err" id="gateErr"></p>
+    <div class="gate-loading" id="gateLoading"><span class="dot"></span><span data-i18n="gate.entering">验证通过，正在进入…</span></div>
+  </div>
+</div>
+
 <div id="progressWrap"><div id="progressBar"></div></div>
 <canvas id="bgCanvas" aria-hidden="true"></canvas>
 <div class="glow glow-a" aria-hidden="true"></div>
@@ -30,10 +48,12 @@
   <div class="nav-actions">
     <button class="icon-btn" id="themeBtn" data-i18n-title="btn.theme" title="切换深浅色">🌙</button>
     <button class="icon-btn lang-btn" id="langBtn" data-i18n="btn.lang" data-i18n-title="btn.lang" title="EN">EN</button>
-    <button class="btn btn-ghost" id="exportBtn" data-i18n-title="btn.export" data-i18n="btn.export">导出</button>
-    <label class="btn btn-ghost" for="importInput" data-i18n="btn.import">导入</label>
+    <button class="btn btn-ghost only-author" id="exportBtn" data-i18n-title="btn.export" data-i18n="btn.export">导出</button>
+    <label class="btn btn-ghost only-author" for="importInput" data-i18n="btn.import">导入</label>
     <input type="file" id="importInput" accept="application/json,.json" hidden />
-    <button class="btn btn-primary" id="uploadBtn" data-i18n="btn.upload">上传作品</button>
+    <button class="btn btn-primary only-author" id="uploadBtn" data-i18n="btn.upload">上传作品</button>
+    <button class="icon-btn only-author" id="seedBtn" data-i18n-title="seed.title" title="自动同步 seed.json">🔄</button>
+    <button class="icon-btn" id="lockBtn" data-i18n-title="author.title" title="作者解锁">🔒</button>
   </div>
   <button class="nav-toggle" id="navToggle" aria-label="菜单">☰</button>
 </header>
@@ -50,7 +70,7 @@
       <div class="hero-actions">
         <a class="btn btn-primary" href="#works" data-i18n="hero.viewWorks">浏览作品集</a>
         <a class="btn btn-ghost" href="#blog" data-i18n="hero.readPosts">读我的文章</a>
-        <button class="btn btn-ghost" id="editProfileBtn" data-i18n="hero.editProfile">✎ 编辑资料</button>
+        <button class="btn btn-ghost only-author" id="editProfileBtn" data-i18n="hero.editProfile">✎ 编辑资料</button>
       </div>
       <div class="stats" id="stats"></div>
     </div>
@@ -76,7 +96,7 @@
             <p class="muted" id="aboutRole">人工智能专业 · 大一在读</p>
             <p class="tagline" id="aboutTagline"></p>
           </div>
-          <button class="icon-btn" id="editProfileBtn2" data-i18n-title="hero.editProfile" title="编辑资料">✎</button>
+          <button class="icon-btn only-author" id="editProfileBtn2" data-i18n-title="hero.editProfile" title="编辑资料">✎</button>
         </div>
         <div class="markdown-body" id="bioBody"></div>
         <div class="contact-chips" id="aboutChips"></div>
@@ -102,8 +122,8 @@
         <p data-i18n="blog.sub">课程笔记、读书报告与技术复盘，支持 Markdown 写作与 .md / .txt 导入。</p>
       </div>
       <div class="head-actions">
-        <button class="btn btn-primary" id="newPostBtn" data-i18n="blog.new">写文章</button>
-        <label class="btn btn-ghost" for="postFileInput" data-i18n="blog.import">导入 .md / .txt</label>
+        <button class="btn btn-primary only-author" id="newPostBtn" data-i18n="blog.new">写文章</button>
+        <label class="btn btn-ghost only-author" for="postFileInput" data-i18n="blog.import">导入 .md / .txt</label>
         <input type="file" id="postFileInput" accept=".md,.markdown,.txt" multiple hidden />
       </div>
     </div>
@@ -123,11 +143,11 @@
         <p data-i18n="works.sub">上传图片、PDF、PPT、Excel、CSV、代码压缩包等任意文件，本地保存并可直接预览。</p>
       </div>
       <div class="head-actions">
-        <button class="btn btn-primary" id="uploadBtn2" data-i18n="works.upload">上传作品</button>
+        <button class="btn btn-primary only-author" id="uploadBtn2" data-i18n="works.upload">上传作品</button>
       </div>
     </div>
 
-    <div class="dropzone reveal" id="dropzone">
+    <div class="dropzone reveal only-author" id="dropzone">
       <div class="dz-icon">⬆</div>
       <div class="dz-text">
         <strong data-i18n="works.dragTitle">把文件拖到这里</strong>
@@ -152,7 +172,7 @@
         <p data-i18n="charts.sub">上传 CSV 或手动录入数据，自动生成折线图、柱状图、饼图与散点图。</p>
       </div>
       <div class="head-actions">
-        <button class="btn btn-primary" id="newChartBtn" data-i18n="charts.new">新建图表</button>
+        <button class="btn btn-primary only-author" id="newChartBtn" data-i18n="charts.new">新建图表</button>
       </div>
     </div>
     <div class="grid grid-2" id="chartGrid"></div>
@@ -177,7 +197,9 @@
 
 <footer class="footer">
   <p id="footerLine1"></p>
-  <p class="muted small" data-i18n="footer.line2">所有数据保存在你自己的浏览器本地（IndexedDB / localStorage），不会上传到任何服务器。</p>
+  <p class="footer-links">
+    <button class="chip" id="noticeBtn" data-i18n="notice.link">使用须知</button>
+  </p>
 </footer>
 
 <!-- ============ MODAL: 资料编辑 ============ -->
@@ -347,8 +369,8 @@
         <div class="row" id="wvActions">
           <a class="btn btn-primary" id="wvDownload" download data-i18n="btn.download">下载文件</a>
           <button class="btn btn-ghost" id="wvFullBtn" data-i18n="viewer.fullscreen">全屏查看</button>
-          <button class="btn btn-ghost" id="wvEditBtn" data-i18n="works.editInfo">编辑信息</button>
-          <button class="btn btn-danger" id="wvDeleteBtn" data-i18n="btn.delete">删除</button>
+          <button class="btn btn-ghost only-author" id="wvEditBtn" data-i18n="works.editInfo">编辑信息</button>
+          <button class="btn btn-danger only-author" id="wvDeleteBtn" data-i18n="btn.delete">删除</button>
         </div>
         <div id="wvEditForm" class="form" hidden>
           <div class="row">
@@ -412,6 +434,88 @@
   </div>
 </div>
 
+<!-- ============ MODAL: 使用须知 ============ -->
+<div class="modal" id="noticeModal">
+  <div class="modal-panel">
+    <div class="modal-head"><h3 data-i18n="notice.title">使用须知</h3><button class="icon-btn close" data-close>✕</button></div>
+    <div class="modal-body">
+      <div class="notice-list">
+        <section>
+          <h4 data-i18n="notice.about">关于本站</h4>
+          <p data-i18n="notice.aboutText">这里是丁一铭（Tim Ding）的个人博客与作品集，用于记录学习过程、展示课程作品与数据分析实践，同时作为课程作业提交。</p>
+        </section>
+        <section>
+          <h4 data-i18n="notice.browse">浏览与编辑</h4>
+          <p data-i18n="notice.browseText">站点默认为访客只读模式：编辑资料、写文章、上传作品、新建图表、导出与导入等功能仅作者可见。访客可以浏览文章、全屏阅读、预览与下载作品文件，不能修改任何内容。</p>
+        </section>
+        <section>
+          <h4 data-i18n="notice.data">数据与隐私</h4>
+          <p data-i18n="notice.dataText">本站是纯静态站点，不收集、不上传任何个人信息；文章内容与上传的文件只保存在访问者自己的浏览器本地，不会传输到任何服务器。清除浏览器站点数据即可删除全部本地内容。</p>
+        </section>
+        <section>
+          <h4 data-i18n="notice.copy">内容与版权</h4>
+          <p data-i18n="notice.copyText">站内文章、图表与作品（引用已注明出处的除外）均为作者原创，版权归作者所有。转载、引用或用于其他用途，请先联系作者获得授权。</p>
+        </section>
+        <section>
+          <h4 data-i18n="notice.tech">技术说明</h4>
+          <p data-i18n="notice.techText">本站由原生 HTML / CSS / JavaScript 手工编写，未使用第三方框架；域名由 DigitalPlat Domain 注册，DNS 与 CDN 托管于 Cloudflare。</p>
+        </section>
+        <section>
+          <h4 data-i18n="notice.contact">联系作者</h4>
+          <p data-i18n="notice.contactText">邮箱：dym18019215657@outlook.com。欢迎交流课程合作、技术问题或任何想法，也欢迎指出站点的不足之处。</p>
+        </section>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" data-i18n="btn.close" data-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: 作者解锁 / 访客只读 ============ -->
+<div class="modal" id="lockModal">
+  <div class="modal-panel">
+    <div class="modal-head"><h3 data-i18n="author.title">作者解锁</h3><button class="icon-btn close" data-close>✕</button></div>
+    <div class="modal-body form">
+      <p class="muted small" id="lockTip"></p>
+      <label><span data-i18n="author.pwd">编辑密码</span>
+        <input id="lockPwd" class="input" type="password" data-i18n-ph="author.pwdPh" placeholder="请输入编辑密码" />
+      </label>
+      <label><span data-i18n="author.newPwd">修改密码（留空则不改）</span>
+        <input id="lockNewPwd" class="input" type="password" />
+      </label>
+
+      <div class="sync-box only-author" id="syncBox" hidden>
+        <div class="sync-title" data-i18n="sync.title">云端同步（GitHub）</div>
+        <label><span data-i18n="sync.token">GitHub Token（PAT）</span>
+          <input id="ghToken" class="input" type="password" data-i18n-ph="sync.tokenPh" placeholder="github_pat_xxx / ghp_xxx" />
+        </label>
+        <div class="row">
+          <label><span data-i18n="sync.owner">仓库所有者</span><input id="ghOwner" class="input" /></label>
+          <label><span data-i18n="sync.repo">仓库名</span><input id="ghRepo" class="input" /></label>
+        </div>
+        <div class="row">
+          <label><span data-i18n="sync.branch">分支</span><input id="ghBranch" class="input" /></label>
+          <label><span data-i18n="sync.path">文件路径</span><input id="ghPath" class="input" /></label>
+        </div>
+        <p class="muted small" data-i18n="sync.tip">Token 只保存在你本机浏览器，不会写入代码、也不会随数据导出；建议使用仅含 Contents 读写权限的 Fine-grained Token。</p>
+        <div class="row">
+          <button class="btn btn-ghost" id="ghSaveBtn" data-i18n="sync.saveCfg">保存配置</button>
+          <button class="btn btn-primary" id="ghSyncBtn" data-i18n="sync.now">一键同步到 GitHub</button>
+        </div>
+        <div class="row">
+          <button class="btn btn-ghost" id="ghLocalBtn" data-i18n="sync.localWrite">写入本地 seed.json</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-i18n="btn.cancel" data-close>取消</button>
+      <button class="btn btn-ghost" id="lockOffBtn" data-i18n="author.lockBtn">锁定为只读</button>
+      <button class="btn btn-primary" id="lockOnBtn" data-i18n="author.unlockBtn">解锁编辑</button>
+    </div>
+  </div>
+</div>
+
 <div id="toastWrap" class="toast-wrap"></div>
 
 <!-- ============ 全屏阅读器（文章） ============ -->
@@ -448,8 +552,18 @@
   <span class="veil-word" id="langVeilWord">EN</span>
 </div>
 
+<script>
+  /* ============================================================
+     可选：远端数据源（访客会优先从这里读取最新内容）
+     把 seed.json 传到 GitHub 后，用 jsDelivr 加速，把地址填在这里：
+       https://cdn.jsdelivr.net/gh/<用户名>/<仓库名>@main/seed.json
+     留空则用后端 API 或站点自带的 assets/data/seed.json
+     ============================================================ */
+  window.CDN_DATA_URL = 'https://cdn.jsdelivr.net/gh/dingy6607-ops/site-data@main/seed.json';
+</script>
 <script src="assets/js/store.js"></script>
 <script src="assets/js/i18n.js"></script>
+<script src="assets/js/sync.js"></script>
 <script src="assets/js/markdown.js"></script>
 <script src="assets/js/charts.js"></script>
 <script src="assets/js/app.js"></script>

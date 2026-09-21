@@ -150,14 +150,89 @@ TimDing-Portfolio/
 
 ---
 
-## 六、数据安全 / Data & Privacy
+## 六、访客只读与作者模式 / Visitor Read-only & Author Mode
+
+- **中**：站点默认是**只读模式**。访客看不到「编辑资料 / 写文章 / 上传作品 / 新建图表 / 导出 / 导入 / 删除」，只能浏览、全屏阅读和下载文件；所有写操作在代码层面也会被拦截。
+- **EN**: The site is **read-only by default**. Visitors don't see Edit Profile / New Post / Upload / New Chart / Export / Import / Delete — they can only browse, read full-screen and download. All write actions are blocked in code too.
+
+- **中**：点右上角 **🔒** → 输入编辑密码 → 解锁为作者模式（🔓），编辑功能全部恢复。**默认密码：`timding2026`，解锁后请立刻在弹窗里改成你自己的密码。**
+- **EN**: Click **🔒** → enter the edit password → author mode (🔓) with all editing tools. **Default password: `timding2026` — change it immediately after unlocking.**
+
+- **中**：离开或换电脑前点「锁定为只读」，页面重新变成访客模式。
+- **EN**: Click "Lock to read-only" before you leave; the page returns to visitor mode.
+
+> **中**：这是纯前端的「防误改」机制，不是真正的安全加密（密码写在前端代码里）。若要严格保护，需要后端鉴权。
+> **EN**: This is a front-end safeguard against accidental edits, not real security (the password lives in front-end code). Strict protection requires backend auth.
+
+## 七、seed.json 自动同步 / Automatic seed.json Sync
+
+- **中**：作者模式下点右上角 **🔄** → 选择本地 `TimDing-Portfolio` 文件夹并允许「编辑/写入」→ 图标变 **🔗**。此后每次**保存文章、上传作品、改图表、改资料、删除内容**，都会自动重新生成并写入 `assets/data/seed.json`，并提示「seed.json 已自动更新」。
+- **EN**: In author mode click **🔄** → pick your local `TimDing-Portfolio` folder and allow write access → icon becomes **🔗**. After that, every save (post, work, chart, profile, deletion) auto-regenerates and writes `assets/data/seed.json`.
+
+- **中**：再点 **🔗** 可取消绑定。
+- **EN**: Click **🔗** again to unbind.
+
+- **中**：要求 **Chrome / Edge** 且通过 `启动本地服务器.bat`（http://localhost:8000）打开；直接双击 `index.html`（file://）不支持。
+- **EN**: Requires **Chrome / Edge** opened through the local server (http://localhost:8000); `file://` is unsupported.
+
+> **中**：自动同步只更新**本地文件**，仍需手动部署一次才能线上生效：`npx wrangler pages deploy . --project-name=项目名`
+> **EN**: Auto-sync only updates the **local file**; you still run one deploy command to publish.
+
+## 八、进站人机验证 / Human Check (Turnstile)
+
+### 站点自带进门页（当前使用 / currently used）
+
+- **中**：打开站点会先显示全屏验证卡片（站点同款深色玻璃风），通过 Turnstile 后才进入；状态存在 `localStorage`，**24 小时内免验证**。
+- **EN**: Visitors see a full-screen verification card (styled like the site) before entering; the pass state is stored in `localStorage` and lasts **24 hours**.
+
+- **中**：**未通过验证前不会请求 `assets/data/seed.json`**，所以未验证的人连数据都拿不到。
+- **EN**: **`assets/data/seed.json` is not requested until verification passes**, so unverified visitors cannot fetch any data.
+
+- **中**：兜底机制：若验证组件加载失败（网络/地区限制），**10 秒后自动放行**，保证站点一定能打开，不会把访客锁在门外。
+- **EN**: Fallback: if the widget fails to load, it **auto-passes after 10 seconds** so the site is never locked.
+
+> **中**：这是纯前端校验（防随手访问与脚本抓取），懂 DevTools 的人可绕过；要严格防护请用下方可选的服务端方案。
+> **EN**: This is a front-end check (stops casual scraping); someone with DevTools can bypass it. Use the optional server-side option below for strict protection.
+
+### 关闭进门验证 / Disable the gate
+
+- **中**：删除 `index.html` 里 `<div class="gate" id="gate" ...>...</div>` 整段，重新部署即可；也可在 Cloudflare 控制台删除对应的 WAF 规则。
+- **EN**: Delete the whole `<div class="gate" id="gate" ...>...</div>` block from `index.html` and redeploy; also remove the matching WAF rule in the Cloudflare dashboard if you added one.
+
+## 九、远端数据源（当前启用）/ Remote data source (in use)
+
+- **中**：站点当前从 jsDelivr 读取最新内容（配置在 `index.html` 的 `window.CDN_DATA_URL`）：
+- **EN**: The site currently loads the latest content from jsDelivr (set via `window.CDN_DATA_URL` in `index.html`):
+
+```js
+window.CDN_DATA_URL = 'https://cdn.jsdelivr.net/gh/dingy6607-ops/site-data@main/seed.json';
+```
+
+- **中**：更新内容只需两步：站点里「导出」得到 `seed.json` → 上传到 GitHub 仓库 `site-data` 覆盖 → 访客刷新即看到最新（**不用重新部署站点**）。
+- **EN**: To update: export `seed.json` from the site → overwrite it in the GitHub repo `site-data` → visitors see the newest content on refresh (**no redeploy needed**).
+
+- **中**：jsDelivr 有几分钟缓存，想立刻生效可在链接后加版本号，如 `.../seed.json?v=2`，或用 jsDelivr 的缓存刷新工具。
+- **EN**: jsDelivr caches for a few minutes; append a version (`.../seed.json?v=2`) or use the jsDelivr purge tool to force an update.
+
+## 十、云端后端（可选）/ Cloud Backend (optional)
+
+- **中**：站点可接入 **Cloudflare Worker + KV** 作为后端（代码见 `worker/site-api.js`）。内容存云端后，作者登录即可多设备同步，访客打开就是最新内容，**不用再手动导出 `seed.json` 和重新部署**。
+- **EN**: The site can connect to a **Cloudflare Worker + KV** backend (see `worker/site-api.js`). Content lives in the cloud: the author signs in to sync across devices and visitors always get the latest data — **no manual `seed.json` export or redeploy needed**.
+
+- **中**：接口：`GET/PUT /api/data`、`GET/POST/DELETE /api/file`、`POST /api/login`。写操作需要登录 token（HMAC 签名，7 天有效），密码只存在于 Worker 的环境变量 `AUTHOR_PASSWORD`。
+- **EN**: Endpoints: `GET/PUT /api/data`, `GET/POST/DELETE /api/file`, `POST /api/login`. Writes require a signed token (HMAC, 7 days); the password exists only in the Worker's `AUTHOR_PASSWORD` variable.
+
+- **中**：**后端不可用时自动降级**：照常读取本地 `seed.json` 与本地数据，不会白屏或报错。
+- **EN**: **Graceful degradation**: if the backend is unreachable, the site falls back to local `seed.json` and local data — no blank page, no errors.
+
+## 十、数据安全 / Data & Privacy
 
 - **中**：全程无网络请求，数据只在本机；建议定期「导出」备份。
 - **EN**: No network requests; everything is local. Export a backup regularly.
 
 ---
 
-## 七、个人信息 / About the Author
+## 十一、个人信息 / About the Author
 
 - 姓名 / Name：丁一铭 / Tim Ding
 - 专业 / Major：人工智能 · 大一在读 / Artificial Intelligence · Freshman

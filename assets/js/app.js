@@ -624,6 +624,8 @@
     syncLang();
     I18N.onChange(() => { syncLang(); initTypewriter(); renderAll(); syncFsBtn(); });
 
+    $('#noticeBtn').addEventListener('click', () => openModal('noticeModal'));
+
     $('#footerLine1').textContent = t('footer.line1', { year: new Date().getFullYear() });
   }
 
@@ -812,8 +814,8 @@
       '<div class="canvas-wrap"><canvas data-cid="' + c.id + '"></canvas><div class="chart-tip" hidden></div></div>' +
       '<p class="muted small">' + esc(pick(c.note, c.noteEn)) + '</p>' +
       '<div class="chart-legend">' + Charts.legend(c) + '</div>' +
-      '<div class="tag-row"><button class="btn small" data-act="edit">' + esc(t('btn.edit')) + '</button>' +
-      '<button class="btn small btn-danger" data-act="del">' + esc(t('btn.delete')) + '</button></div>' +
+      '<div class="tag-row"><button class="btn small only-author" data-act="edit">' + esc(t('btn.edit')) + '</button>' +
+      '<button class="btn small btn-danger only-author" data-act="del">' + esc(t('btn.delete')) + '</button></div>' +
       '</article>'
     ).join('');
 
@@ -909,6 +911,7 @@
       renderStats();
       closeModal('profileModal');
       toast(t('toast.profileSaved'));
+      syncSeed();
     });
   }
 
@@ -923,17 +926,26 @@
       const id = img.dataset.asset;
       if (!id || img.dataset.hydrated) return;
       img.dataset.hydrated = '1';
-      Store.getFile(id).then((f) => {
-        if (!f) {
-          img.classList.add('missing');
-          if (!img.alt) img.alt = t('editor.imgMissing');
-          return;
-        }
-        const url = URL.createObjectURL(f.blob);
+      const showBlob = (blob) => {
+        const url = URL.createObjectURL(blob);
         assetUrls.push(url);
         while (assetUrls.length > 40) URL.revokeObjectURL(assetUrls.shift());
         img.onload = () => { img.dataset.loaded = '1'; };
         img.src = url;
+      };
+      const markMissing = () => {
+        img.classList.add('missing');
+        if (!img.alt) img.alt = t('editor.imgMissing');
+      };
+
+      Store.getFile(id).then((f) => {
+        if (f) { showBlob(f.blob); return; }
+        // 本地没有 → 尝试云端拉取并缓存
+        return Store.cloudGetFile(id).then((cf) => {
+          if (!cf) { markMissing(); return; }
+          Store.putFile(id, new File([cf.blob], cf.name || 'file', { type: cf.type }));
+          showBlob(cf.blob);
+        });
       });
     });
   }
@@ -951,6 +963,7 @@
   }
 
   function openPostModal(post) {
+    if (!guard()) return;
     editingPostId = post ? post.id : null;
     $('#postModalTitle').textContent = post ? t('post.edit') : t('post.new');
     $('#postTitle').value = post ? (isEn() ? (post.titleEn || '') : post.title) : '';
@@ -964,9 +977,14 @@
     hint.hidden = true;
     let html = '<p><br></p>';
     if (post) {
-      const raw = isEn() ? (post.bodyEn || '') : post.body;
-      if (post.format === 'html') html = raw || '<p><br></p>';
-      else if (raw) { html = Markdown.render(raw); hint.hidden = false; }
+      const b = bodyOf(post);
+      const raw = b.raw || '';
+      if (b.fmt === 'html' && looksLikeHtml(raw)) {
+        html = raw || '<p><br></p>';
+      } else if (raw) {
+        html = Markdown.render(raw);      // Markdown 文章自动转成富文本来编辑
+        hint.hidden = false;
+      }
     }
     ed.innerHTML = sanitizeHtml(html);
     ed.setAttribute('data-placeholder', t('editor.placeholder'));
@@ -1009,14 +1027,28 @@
 
   /** 文章纯文本（用于摘要、搜索、字数） */
   function postPlain(p) {
-    const raw = pick(p.body, p.bodyEn);
-    return p.format === 'html' ? stripTags(raw) : Markdown.plain(raw);
+    const b = bodyOf(p);
+    const asHtml = b.fmt === 'html' && looksLikeHtml(b.raw);
+    return asHtml ? stripTags(b.raw) : Markdown.plain(b.raw);
   }
 
-  /** 把文章内容渲染到容器（富文本 HTML 或旧版 Markdown） */
+  /** 内容看起来像 HTML 吗（含标签） */
+  function looksLikeHtml(s) {
+    return /<[a-z][^>]*>/i.test(String(s || ''));
+  }
+
+  /** 按当前语言取正文内容与它的格式（md / html） */
+  function bodyOf(post) {
+    return isEn()
+      ? { raw: post.bodyEn || post.body, fmt: post.formatEn || post.format }
+      : { raw: post.body, fmt: post.format };
+  }
+
+  /** 把文章内容渲染到容器；标记与内容不符时自动回退 Markdown */
   function renderBody(post, el) {
-    const raw = pick(post.body, post.bodyEn);
-    el.innerHTML = post.format === 'html' ? sanitizeHtml(raw) : Markdown.render(raw);
+    const b = bodyOf(post);
+    const asHtml = b.fmt === 'html' && looksLikeHtml(b.raw);
+    el.innerHTML = asHtml ? sanitizeHtml(b.raw) : Markdown.render(b.raw);
     hydrateAssets(el);
     hydrateCharts(el);
   }
@@ -1076,7 +1108,7 @@
     let done = 0;
     imgs.forEach((f) => {
       const fileId = uid();
-      Store.putFile(fileId, f).then(() => {
+      saveFile(fileId, f).then(() => {
         const alt = f.name.replace(/\.[^.]+$/, '');
         insertRichHtml('<img class="md-asset" data-asset="' + fileId + '" alt="' + esc(alt) + '" /><p><br></p>');
         hydrateAssets($('#postEditor'));
@@ -1119,7 +1151,7 @@
       richInsertTable(parseInt($('#tblCols').value, 10), parseInt($('#tblRows').value, 10));
       $('#tablePanel').hidden = true;
     });
-    $('#mdChartBtn').addEventListener('click', () => { chartInsertMode = true; openChartModal(null); });
+    $('#mdChartBtn').addEventListener('click', () => { if (!guard()) return; chartInsertMode = true; openChartModal(null); });
 
     const ed = $('#postEditor');
     ed.addEventListener('input', updateWordCount);
@@ -1156,16 +1188,20 @@
       const summary = $('#postSummary').value.trim();
       const body = sanitizeHtml($('#postEditor').innerHTML);
       const data = {
-        format: 'html',
         date: $('#postDate').value || today(),
         tags: $('#postTags').value.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
       };
+      // 中英语正文分别记录格式：谁被编辑就转成富文本，另一边保持原样
       if (isEn()) {
-        data.titleEn = title; data.summaryEn = summary; data.bodyEn = body;
-        if (!editingPostId) { data.title = title; data.summary = summary; data.body = body; }
+        data.titleEn = title; data.summaryEn = summary; data.bodyEn = body; data.formatEn = 'html';
+        if (!editingPostId) {
+          data.title = title; data.summary = summary; data.body = body; data.format = 'html';
+        }
       } else {
-        data.title = title; data.summary = summary; data.body = body;
-        if (!editingPostId) { data.titleEn = title; data.summaryEn = summary; data.bodyEn = body; }
+        data.title = title; data.summary = summary; data.body = body; data.format = 'html';
+        if (!editingPostId) {
+          data.titleEn = title; data.summaryEn = summary; data.bodyEn = body; data.formatEn = 'html';
+        }
       }
       if (editingPostId) {
         const p = Store.meta.posts.filter((x) => x.id === editingPostId)[0];
@@ -1180,9 +1216,11 @@
       renderStats();
       closeModal('postModal');
       toast(t('toast.postSaved'));
+      syncSeed();
     });
 
     $('#deletePostBtn').addEventListener('click', () => {
+      if (!guard()) return;
       if (!editingPostId) return;
       if (!confirm(t('confirm.post'))) return;
       const post = Store.meta.posts.filter((x) => x.id === editingPostId)[0];
@@ -1193,9 +1231,11 @@
       renderStats();
       closeModal('postModal');
       toast(t('toast.deleted'));
+      syncSeed();
     });
 
     $('#postFileInput').addEventListener('change', (e) => {
+      if (!guard()) { e.target.value = ''; return; }
       const files = Array.prototype.slice.call(e.target.files || []);
       let n = 0;
       files.forEach((f) => {
@@ -1238,7 +1278,7 @@
       const p = Store.meta.posts.filter((x) => x.id === card.dataset.id)[0];
       if (!p) return;
       viewingPostId = p.id;
-      $('#pvTitle').textContent = p.title;
+      $('#pvTitle').textContent = pick(p.title, p.titleEn);
       $('#pvMeta').innerHTML = '<span>' + fmtDate(p.date) + '</span>' +
         (p.tags || []).map((t) => '<span class="tag">#' + esc(t) + '</span>').join('');
       renderBody(p, $('#pvBody'));
@@ -1258,6 +1298,7 @@
   let viewingWorkId = null;
 
   function openUploadModal(files) {
+    if (!guard()) return;
     pendingFiles = files || [];
     if (!pendingFiles.length) return;
     const list = $('#upFilesList');
@@ -1295,6 +1336,7 @@
     $('#uploadBtn2').addEventListener('click', () => input.click());
 
     $('#saveWorksBtn').addEventListener('click', () => {
+      if (!guard()) return;
       if (!pendingFiles.length) return;
       const cat = $('#upCategory').value;
       const commonTags = $('#upTags').value.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
@@ -1328,7 +1370,7 @@
           ? shrinkImage(f, 420).then((u) => { work.thumb = u; }).catch(() => {})
           : Promise.resolve();
         return thumbJob
-          .then(() => Store.putFile(fileId, f))
+          .then(() => saveFile(fileId, f))
           .then((where) => {
             work.storage = where;
             Store.meta.works.push(work);
@@ -1341,6 +1383,7 @@
         closeModal('uploadModal');
         pendingFiles = [];
         toast(t('toast.worksSaved', { n: Store.meta.works.length, tip: big ? t('toast.bigFile') : '' }));
+        syncSeed();
       });
     });
 
@@ -1372,6 +1415,7 @@
     });
 
     $('#wvSaveEditBtn').addEventListener('click', () => {
+      if (!guard()) return;
       const w = currentWork();
       if (!w) return;
       const newTitle = $('#wvEditTitle').value.trim();
@@ -1385,9 +1429,11 @@
       $('#wvTitle').textContent = pick(w.title, w.titleEn);
       $('#wvEditForm').hidden = true;
       toast(t('toast.updated'));
+      syncSeed();
     });
 
     $('#wvDeleteBtn').addEventListener('click', () => {
+      if (!guard()) return;
       const w = currentWork();
       if (!w || !confirm(t('confirm.work', { name: pick(w.title, w.titleEn) }))) return;
       Store.deleteFile(w.fileId);
@@ -1397,6 +1443,7 @@
       renderStats();
       closeModal('workViewModal');
       toast(t('toast.deleted'));
+      syncSeed();
     });
   }
 
@@ -1555,7 +1602,7 @@
   }
 
   function initChartEvents() {
-    $('#newChartBtn').addEventListener('click', () => { chartInsertMode = false; openChartModal(null); });
+    $('#newChartBtn').addEventListener('click', () => { if (!guard()) return; chartInsertMode = false; openChartModal(null); });
     $('#chType').addEventListener('change', drawChartPreview);
     $('#chCsv').addEventListener('input', () => { syncGridFromCsv($('#chCsv').value); drawChartPreview(); });
 
@@ -1645,6 +1692,7 @@
       renderStats();
       closeModal('chartModal');
       toast(t('toast.chartSaved'));
+      syncSeed();
     });
 
     $('#deleteChartBtn').addEventListener('click', () => {
@@ -1657,6 +1705,7 @@
       renderStats();
       closeModal('chartModal');
       toast(t('toast.deleted'));
+      syncSeed();
     });
 
     $('#chartGrid').addEventListener('click', (e) => {
@@ -1672,6 +1721,7 @@
         renderCharts();
         renderStats();
         toast(t('toast.deleted'));
+        syncSeed();
       }
     });
   }
@@ -1692,6 +1742,7 @@
         return Store.importAll(txt).then(() => {
           renderAll();
           toast(t('toast.restored'));
+          syncSeed();
         });
       }).catch((err) => toast(t('toast.importFail', { msg: (err && err.message) || 'bad format' }), true));
       e.target.value = '';
@@ -1718,13 +1769,354 @@
   }
 
   /* ---------------- 卡片鼠标光效 ---------------- */
+  const GLOW_SELECTOR = '.item, .card, .stat';
+
+  /** 触点涟漪：从按下位置荡开一圈水光 */
+  function spawnRipple(card, x, y) {
+    if (!card || !card.appendChild) return;
+    const el = document.createElement('span');
+    el.className = 'ripple';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    card.appendChild(el);
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 720);
+  }
+
   function initCardFx() {
+    // 指针位置写入 CSS 变量，卡片柔光随之移动
     document.addEventListener('mousemove', (e) => {
-      const card = e.target.closest && e.target.closest('.item');
+      const card = e.target.closest && e.target.closest(GLOW_SELECTOR);
       if (!card) return;
       const r = card.getBoundingClientRect();
       card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
       card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    });
+
+    // 按下时从触点荡开涟漪（鼠标与触摸统一用 pointerdown）
+    document.addEventListener('pointerdown', (e) => {
+      const card = e.target.closest && e.target.closest(GLOW_SELECTOR);
+      if (!card) return;
+      const r = card.getBoundingClientRect();
+      spawnRipple(card, e.clientX - r.left, e.clientY - r.top);
+    });
+
+    // 手机端：手指滑动时柔光也跟随
+    document.addEventListener('touchmove', (e) => {
+      const touch = e.touches && e.touches[0];
+      if (!touch) return;
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      const card = el && el.closest ? el.closest(GLOW_SELECTOR) : null;
+      if (!card) return;
+      const r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', (touch.clientX - r.left) + 'px');
+      card.style.setProperty('--my', (touch.clientY - r.top) + 'px');
+    }, { passive: true });
+  }
+
+  /* ---------------- 访客只读 / 作者模式 ---------------- */
+  const AUTHOR_FLAG = 'timding.author';
+  const AUTHOR_PWD = 'timding.authorPwd';
+  const DEFAULT_PWD = 'timding2026';   // 默认编辑密码，作者可在页面上修改
+
+  function isAuthor() {
+    try { return localStorage.getItem(AUTHOR_FLAG) === '1'; } catch (e) { return false; }
+  }
+
+  function currentPwd() {
+    try { return localStorage.getItem(AUTHOR_PWD) || DEFAULT_PWD; } catch (e) { return DEFAULT_PWD; }
+  }
+
+  function applyAuthorMode() {
+    const on = isAuthor();
+    document.body.classList.toggle('readonly', !on);
+    const btn = $('#lockBtn');
+    if (btn) {
+      btn.textContent = on ? '🔓' : '🔒';
+      btn.title = t(on ? 'author.editable' : 'author.readonly');
+    }
+  }
+
+  /** 写操作守卫：访客只读模式下拦截一切修改 */
+  function guard() {
+    if (isAuthor()) return true;
+    toast(t('toast.locked'), true);
+    return false;
+  }
+
+  function initLock() {
+    GitHubSync.load();
+
+    const fillSyncForm = () => {
+      const c = GitHubSync.cfg;
+      $('#ghToken').value = c.token || '';
+      $('#ghOwner').value = c.owner;
+      $('#ghRepo').value = c.repo;
+      $('#ghBranch').value = c.branch;
+      $('#ghPath').value = c.path;
+    };
+
+    $('#lockBtn').addEventListener('click', () => {
+      const on = isAuthor();
+      $('#lockTip').textContent = t(on ? 'author.tipOn' : 'author.tip');
+      $('#lockOffBtn').hidden = !on;
+      $('#lockOnBtn').textContent = on ? t('btn.save') : t('author.unlockBtn');
+      $('#lockPwd').value = '';
+      $('#lockNewPwd').value = '';
+      $('#syncBox').hidden = !on;              // 同步区只有作者能看到
+      if (on) fillSyncForm();
+      openModal('lockModal');
+    });
+
+    // 保存 GitHub 配置（只写本机 localStorage）
+    $('#ghSaveBtn').addEventListener('click', () => {
+      if (!guard()) return;
+      GitHubSync.save({
+        owner: $('#ghOwner').value.trim(),
+        repo: $('#ghRepo').value.trim(),
+        branch: $('#ghBranch').value.trim(),
+        path: $('#ghPath').value.trim(),
+        token: $('#ghToken').value.trim()
+      });
+      toast(t('sync.cfgSaved'));
+    });
+
+    // 一键同步到 GitHub
+    $('#ghSyncBtn').addEventListener('click', () => {
+      if (!guard()) return;
+      const btn = $('#ghSyncBtn');
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = t('sync.syncing');
+      Store.exportAll()
+        .then((json) => GitHubSync.commit(json, 'auto: update site data via Author Mode UI'))
+        .then((res) => {
+          btn.disabled = false;
+          btn.textContent = label;
+          if (res && res.ok) {
+            toast(t('sync.ok'));
+          } else {
+            const msg = (res && res.error === 'NO_TOKEN')
+              ? t('sync.noToken')
+              : ((res && res.error) || t('sync.fail'));
+            toast(msg + ' · ' + t('sync.fallback'), true);
+          }
+        });
+    });
+
+    // 一键覆盖本地 seed.json
+    $('#ghLocalBtn').addEventListener('click', () => {
+      if (!guard()) return;
+      if (!seedDirHandle) { toast(t('sync.localNeedBind'), true); return; }
+      writeSeed().then((ok) => {
+        toast(ok ? t('sync.localOk') : t('sync.localFail'), !ok);
+      });
+    });
+
+    $('#lockOnBtn').addEventListener('click', () => {
+      const pwd = $('#lockPwd').value;
+      const newPwd = $('#lockNewPwd').value.trim();
+      if (!isAuthor()) {
+        // 先走云端登录；接口不可用时回退本地密码
+        Store.cloudLogin(pwd).then((res) => {
+          if (res === null) {
+            if (pwd !== currentPwd()) { toast(t('author.wrongPwd'), true); return; }
+            try { localStorage.setItem(AUTHOR_FLAG, '1'); } catch (e) {}
+            toast(t('author.unlocked'));
+          } else if (res === true) {
+            try { localStorage.setItem(AUTHOR_FLAG, '1'); } catch (e) {}
+            toast(t('author.cloudUnlocked'));
+          } else {
+            toast(t('author.wrongPwd'), true);
+            return;
+          }
+          applyAuthorMode();
+          closeModal('lockModal');
+        });
+        return;
+      }
+      if (newPwd) {
+        try { localStorage.setItem(AUTHOR_PWD, newPwd); } catch (e) {}
+        toast(t('author.pwdSaved'));
+      }
+      applyAuthorMode();
+      closeModal('lockModal');
+    });
+
+    $('#lockOffBtn').addEventListener('click', () => {
+      try { localStorage.removeItem(AUTHOR_FLAG); } catch (e) {}
+      applyAuthorMode();
+      closeModal('lockModal');
+      toast(t('author.locked'));
+    });
+  }
+
+  /* ---------------- 进门人机验证（通过后才加载站点数据） ---------------- */
+  const GATE_KEY = 'timding.gate';
+  const GATE_TTL = 24 * 60 * 60 * 1000;
+
+  function gatePassed() {
+    try {
+      const ts = Number(localStorage.getItem(GATE_KEY) || 0);
+      return !!(ts && Date.now() - ts < GATE_TTL);
+    } catch (e) { return false; }
+  }
+
+  /** 验证通过后执行 done（加载预设数据）；无需验证时立即执行 */
+  function startGate(done) {
+    const run = () => { if (typeof done === 'function') done(); };
+    const gate = $('#gate');
+    if (!gate) return run();
+    if (gatePassed()) return run();
+
+    gate.hidden = false;
+    document.body.style.overflow = 'hidden';
+
+    let settled = false;
+    let timer = null;
+
+    const pass = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { localStorage.setItem(GATE_KEY, String(Date.now())); } catch (e) {}
+      document.body.style.overflow = '';
+      gate.classList.add('out');
+      setTimeout(() => { gate.hidden = true; gate.classList.remove('out'); }, 430);
+      run();
+    };
+
+    const fail = (msg) => {
+      if (settled) return;
+      const err = $('#gateErr');
+      if (err && msg) err.textContent = msg;
+      pass();
+    };
+
+    window.gateVerified = () => {
+      const l = $('#gateLoading');
+      if (l) l.style.display = 'block';
+      pass();
+    };
+    window.gateError = () => {
+      const err = $('#gateErr');
+      if (err && !settled) err.textContent = t('gate.err');
+    };
+
+    // 兜底：验证组件加载失败 / 用户环境不支持 → 自动放行，保证站点能打开
+    timer = setTimeout(() => fail(t('gate.fail')), 10000);
+
+    const s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+    s.async = true;
+    s.defer = true;
+    s.onerror = () => fail(t('gate.fail'));
+    document.head.appendChild(s);
+  }
+
+  /* ---------------- seed.json 自动同步（仅作者模式） ---------------- */
+  const SEED_DIR_KEY = 'seedDir';
+  let seedDirHandle = null;
+  let seedTimer = null;
+  let cloudTimer = null;
+
+  function seedSupported() {
+    return !!(window.FileSystemDirectoryHandle && typeof window.showDirectoryPicker === 'function');
+  }
+
+  function updateSeedBtn() {
+    const btn = $('#seedBtn');
+    if (!btn) return;
+    btn.textContent = seedDirHandle ? '🔗' : '🔄';
+    btn.title = seedDirHandle ? t('seed.bound') : t('seed.title');
+    btn.style.opacity = seedDirHandle ? '1' : '.55';
+  }
+
+  /** 内容变更后调用：本地文件 + 云端各同步一次（延迟合并） */
+  function syncSeed() {
+    if (!isAuthor()) return;
+    clearTimeout(seedTimer);
+    seedTimer = setTimeout(writeSeed, 700);          // 本地项目文件夹（若已绑定）
+    clearTimeout(cloudTimer);
+    cloudTimer = setTimeout(pushCloud, 800);         // 云端 Worker + KV（若已登录）
+  }
+
+  function pushCloud() {
+    if (!isAuthor() || !Store.cloudToken) return Promise.resolve(false);
+    return Store.cloudSaveMeta().then((ok) => {
+      toast(ok ? t('toast.cloudSaved') : t('toast.cloudFail'), !ok);
+      return ok;
+    });
+  }
+
+  /** 保存文件：本地 + 云端 */
+  function saveFile(id, file) {
+    return Store.putFile(id, file).then((where) => {
+      if (isAuthor()) Store.cloudPutFile(id, file);   // 静默推送，失败不影响本地
+      return where;
+    });
+  }
+
+  function writeSeed() {
+    if (!isAuthor() || !seedDirHandle) return Promise.resolve(false);
+    return seedDirHandle.queryPermission({ mode: 'readwrite' }).then((perm) => {
+      if (perm !== 'granted') return false;
+      return Store.exportAll().then((json) => {
+        return seedDirHandle.getDirectoryHandle('assets', { create: true })
+          .then((assets) => assets.getDirectoryHandle('data', { create: true }))
+          .then((dataDir) => dataDir.getFileHandle('seed.json', { create: true }))
+          .then((fh) => fh.createWritable())
+          .then((w) => w.write(json).then(() => w.close()))
+          .then(() => {
+            toast(t('seed.synced') + ' · ' + Math.max(1, Math.round(json.length / 1024)) + ' KB');
+            return true;
+          });
+      });
+    }).catch(() => false);
+  }
+
+  function initSeedSync() {
+    const btn = $('#seedBtn');
+    if (!btn) return;
+    if (!seedSupported()) {
+      btn.style.opacity = '.3';
+      btn.title = t('seed.noSupport');
+      btn.addEventListener('click', () => toast(t('seed.noSupport'), true));
+      return;
+    }
+    Store.getKV(SEED_DIR_KEY).then((h) => {
+      if (h) seedDirHandle = h;
+      updateSeedBtn();
+    });
+
+    btn.addEventListener('click', () => {
+      if (!guard()) return;
+
+      // 已绑定 → 询问是否解绑
+      if (seedDirHandle) {
+        if (confirm(t('seed.askUnbind'))) {
+          Store.delKV(SEED_DIR_KEY).then(() => {
+            seedDirHandle = null;
+            updateSeedBtn();
+            toast(t('seed.unbind'));
+          });
+        }
+        return;
+      }
+
+      window.showDirectoryPicker({ mode: 'readwrite' }).then((dir) => {
+        return dir.queryPermission({ mode: 'readwrite' }).then((perm) => {
+          if (perm === 'granted') return perm;
+          return dir.requestPermission({ mode: 'readwrite' });
+        }).then((perm) => {
+          if (perm !== 'granted') { toast(t('seed.denied'), true); return; }
+          seedDirHandle = dir;
+          return Store.putKV(SEED_DIR_KEY, dir).then(() => {
+            updateSeedBtn();
+            toast(t('seed.bound'));
+            return writeSeed();
+          });
+        });
+      }).catch(() => {});
     });
   }
 
@@ -1866,6 +2258,7 @@
   }
 
   function init() {
+    Store.initCloud();
     Store.load(SEED);
     I18N.init();
     I18N.apply();
@@ -1878,13 +2271,30 @@
     initWorkEvents();
     initChartEvents();
     initDataEvents();
+    initLock();
+    initSeedSync();
     initFullscreen();
     initCardFx();
+    applyAuthorMode();
     renderAll();
 
-    // 首次打开（本地无任何数据）时，自动载入 assets/data/seed.json 的预设内容
-    Store.loadSeedIfEmpty().then((ok) => {
-      if (ok) { renderAll(); toast(t('toast.seedLoaded')); }
+    // 进门验证通过后再载入预设数据（未验证的访客拿不到 seed.json）
+    startGate(() => {
+      if (!Store.fresh) return;                    // 本地已有数据，无需引导
+      // 首次打开：优先从云端拉最新内容，云端没有再回退 seed.json
+      Store.cloudLoadMeta().then((meta) => {
+        if (meta) {
+          Store.importAll(JSON.stringify({ meta: meta, files: {} })).then(() => {
+            Store.fresh = false;
+            renderAll();
+            toast(t('toast.cloudLoaded'));
+          });
+        } else {
+          Store.loadSeedIfEmpty().then((ok) => {
+            if (ok) { renderAll(); toast(t('toast.seedLoaded')); }
+          });
+        }
+      });
     });
   }
 

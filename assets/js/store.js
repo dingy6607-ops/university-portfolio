@@ -9,8 +9,9 @@
   var META_KEY = 'timding.meta.v1';
   var FILE_PREFIX = 'timding.file.';
   var DB_NAME = 'timding-portfolio';
-  var DB_VERSION = 1;
+  var DB_VERSION = 2;
   var STORE_NAME = 'files';
+  var KV_STORE = 'kv';
 
   var dbPromise = null;
   var memoryFiles = Object.create(null); // 兜底：{ id: {blob,name,type,size} }
@@ -28,6 +29,7 @@
       req.onupgradeneeded = function () {
         var db = req.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(KV_STORE)) db.createObjectStore(KV_STORE, { keyPath: 'id' });
       };
       req.onsuccess = function () { done(req.result); };
       req.onerror = function () { done(null); };
@@ -211,6 +213,46 @@
       }));
     },
 
+    /** 存一个任意值（如文件夹句柄），key 唯一 */
+    putKV: function (key, value) {
+      return openDB().then(function (db) {
+        if (!db) return false;
+        return new Promise(function (resolve) {
+          var tx;
+          try { tx = db.transaction(KV_STORE, 'readwrite'); } catch (e) { return resolve(false); }
+          tx.objectStore(KV_STORE).put({ id: key, value: value });
+          tx.oncomplete = function () { resolve(true); };
+          tx.onerror = function () { resolve(false); };
+        });
+      });
+    },
+
+    getKV: function (key) {
+      return openDB().then(function (db) {
+        if (!db) return null;
+        return new Promise(function (resolve) {
+          var tx;
+          try { tx = db.transaction(KV_STORE, 'readonly'); } catch (e) { return resolve(null); }
+          var rq = tx.objectStore(KV_STORE).get(key);
+          rq.onsuccess = function () { resolve(rq.result ? rq.result.value : null); };
+          rq.onerror = function () { resolve(null); };
+        });
+      });
+    },
+
+    delKV: function (key) {
+      return openDB().then(function (db) {
+        if (!db) return false;
+        return new Promise(function (resolve) {
+          var tx;
+          try { tx = db.transaction(KV_STORE, 'readwrite'); } catch (e) { return resolve(false); }
+          tx.objectStore(KV_STORE).delete(key);
+          tx.oncomplete = function () { resolve(true); };
+          tx.onerror = function () { resolve(false); };
+        });
+      });
+    },
+
     /**
      * 首次打开（本地完全没有数据）时，从 ./assets/data/seed.json 载入预设内容
      * 成功返回 true，无预设 / 加载失败（如 file:// 下的 CORS）返回 false
@@ -231,6 +273,110 @@
           self.fresh = false;
           return true;
         });
+      }).catch(function () { return false; });
+    },
+
+    /* ---------------- 云端同步（Cloudflare Worker + KV） ---------------- */
+    cloudToken: null,
+
+    initCloud: function () {
+      try { this.cloudToken = localStorage.getItem('timding.cloudToken') || null; } catch (e) { this.cloudToken = null; }
+      return this.cloudToken;
+    },
+
+    setCloudToken: function (token) {
+      this.cloudToken = token || null;
+      try {
+        if (token) localStorage.setItem('timding.cloudToken', token);
+        else localStorage.removeItem('timding.cloudToken');
+      } catch (e) {}
+    },
+
+    cloudHeaders: function (isJson) {
+      var h = {};
+      if (isJson) h['content-type'] = 'application/json';
+      if (this.cloudToken) h['authorization'] = 'Bearer ' + this.cloudToken;
+      return h;
+    },
+
+    /** 云端登录：true=成功，false=密码错，null=接口不可用 */
+    cloudLogin: function (password) {
+      if (!global.fetch) return Promise.resolve(null);
+      return fetch('api/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password: String(password || '') })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.ok && d.token) { this.setCloudToken(d.token); return true; }
+        return false;
+      }.bind(this)).catch(function () { return null; });
+    },
+
+    /**
+     * 拉取远端数据（多源自动回退）：
+     *   1) 全局配置的 CDN 地址（window.CDN_DATA_URL，如 jsDelivr）
+     *   2) 后端 API（/api/data，Cloudflare Worker + KV）
+     *   3) 站点自带的 assets/data/seed.json
+     * 全部失败返回 null
+     */
+    cloudLoadMeta: function () {
+      if (!global.fetch) return Promise.resolve(null);
+      var sources = [];
+      if (global.CDN_DATA_URL) sources.push(global.CDN_DATA_URL);
+      sources.push('api/data');
+      sources.push('assets/data/seed.json');
+
+      function pick(d) {
+        if (!d) return null;
+        if (d.meta && d.meta.profile) return d.meta;      // { meta: {...} }
+        if (d.profile) return d;                          // 直接就是 meta
+        return null;
+      }
+
+      function tryNext(i) {
+        if (i >= sources.length) return Promise.resolve(null);
+        return fetch(sources[i], { cache: 'no-store' }).then(function (r) {
+          if (!r.ok) return null;
+          return r.json();
+        }).then(function (d) {
+          return pick(d) || tryNext(i + 1);
+        }).catch(function () {
+          return tryNext(i + 1);
+        });
+      }
+      return tryNext(0);
+    },
+
+    cloudSaveMeta: function () {
+      if (!global.fetch || !this.cloudToken) return Promise.resolve(false);
+      return fetch('api/data', {
+        method: 'PUT',
+        headers: this.cloudHeaders(true),
+        body: JSON.stringify({ meta: this.meta })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        return !!(d && d.ok);
+      }).catch(function () { return false; });
+    },
+
+    cloudGetFile: function (id) {
+      if (!global.fetch || !id) return Promise.resolve(null);
+      return fetch('api/file?id=' + encodeURIComponent(id)).then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (d) {
+        if (!d || !d.ok || !d.b64) return null;
+        return { blob: base64ToBlob(d.b64, d.type), name: d.name, type: d.type, size: d.b64.length };
+      }).catch(function () { return null; });
+    },
+
+    cloudPutFile: function (id, file) {
+      if (!global.fetch || !this.cloudToken) return Promise.resolve(false);
+      var self = this;
+      return blobToBase64(file).then(function (b64) {
+        return fetch('api/file', {
+          method: 'POST',
+          headers: self.cloudHeaders(true),
+          body: JSON.stringify({ id: id, name: file.name, type: file.type || '', b64: b64 })
+        }).then(function (r) { return r.json(); }).then(function (d) { return !!(d && d.ok); });
       }).catch(function () { return false; });
     },
 
