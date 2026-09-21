@@ -91,6 +91,7 @@
     save: function () {
       try {
         localStorage.setItem(META_KEY, JSON.stringify(this.meta));
+        localStorage.setItem('timding.localAt', String(Date.now()));   // 本地最后改动时间
         return true;
       } catch (e) {
         return false;
@@ -322,15 +323,17 @@
     cloudLoadMeta: function () {
       if (!global.fetch) return Promise.resolve(null);
       var sources = [];
-      if (global.CDN_DATA_URL) sources.push(global.CDN_DATA_URL);
-      sources.push('api/data');
-      sources.push('assets/data/seed.json');
+      sources.push('api/data');                            // 1) KV 后端：实时、最新
+      if (global.CDN_DATA_URL) sources.push(global.CDN_DATA_URL);  // 2) CDN 兜底
+      sources.push('assets/data/seed.json');               // 3) 站点自带文件
 
       function pick(d) {
         if (!d) return null;
-        if (d.meta && d.meta.profile) return d.meta;      // { meta: {...} }
-        if (d.profile) return d;                          // 直接就是 meta
-        return null;
+        var m = null;
+        if (d.meta && d.meta.profile) m = d.meta;        // { meta: {...} }
+        else if (d.profile) m = d;                       // 直接就是 meta
+        if (!m) return null;
+        return { meta: m, at: (d.exportedAt && Date.parse(d.exportedAt)) || 0 };
       }
 
       function tryNext(i) {

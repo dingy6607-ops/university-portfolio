@@ -1887,13 +1887,17 @@
       const label = btn.textContent;
       btn.disabled = true;
       btn.textContent = t('sync.syncing');
-      Store.exportAll()
-        .then((json) => GitHubSync.commit(json, 'auto: update site data via Author Mode UI'))
-        .then((res) => {
+      // ① 先回写本地文件（seed.json + index.html），② 再提交到 GitHub
+      Promise.resolve(writeLocalFiles())
+        .then((local) => Store.exportAll().then((json) => ({ json: json, local: local })))
+        .then((pack) => Store.cloudSaveMeta().then(() => pack))      // ② 推 KV（实时）
+        .then((pack) => GitHubSync.commit(pack.json, 'auto: update site data via Author Mode UI')
+          .then((res) => ({ res: res, local: pack.local })))
+        .then((out) => {
           btn.disabled = false;
           btn.textContent = label;
-          if (res && res.ok) {
-            toast(t('sync.ok'));
+          if (out.res && out.res.ok) {
+            toast(t('sync.ok') + (out.local ? t('sync.localSync') : ''));
           } else {
             const msg = (res && res.error === 'NO_TOKEN')
               ? t('sync.noToken')
@@ -2043,9 +2047,36 @@
   function pushCloud() {
     if (!isAuthor() || !Store.cloudToken) return Promise.resolve(false);
     return Store.cloudSaveMeta().then((ok) => {
+      if (ok) { try { localStorage.setItem('timding.remoteAt', String(Date.now())); } catch (e) {} }
       toast(ok ? t('toast.cloudSaved') : t('toast.cloudFail'), !ok);
       return ok;
     });
+  }
+
+  /** 把当前生效的 CDN 地址写回本地 index.html，保证本地文件与线上一致 */
+  function writeIndexHtml() {
+    if (!seedDirHandle || !window.CDN_DATA_URL) return Promise.resolve(false);
+    return seedDirHandle.getFileHandle('index.html', { create: false })
+      .then((fh) => fh.getFile())
+      .then((file) => file.text())
+      .then((txt) => {
+        const re = /(window\.CDN_DATA_URL\s*=\s*')([^']*)(')/;
+        if (!re.test(txt)) return false;
+        const next = txt.replace(re, '$1' + window.CDN_DATA_URL + '$3');
+        if (next === txt) return true;                     // 已是最新
+        return seedDirHandle.getFileHandle('index.html', { create: false })
+          .then((fh) => fh.createWritable())
+          .then((w) => w.write(next).then(() => w.close()))
+          .then(() => true);
+      })
+      .catch(() => false);
+  }
+
+  /** 本地双写：seed.json + index.html */
+  function writeLocalFiles() {
+    if (!seedDirHandle) return Promise.resolve(null);       // 未绑定文件夹
+    return Promise.all([writeSeed(), writeIndexHtml()])
+      .then((rs) => (rs[0] || rs[1]) ? true : false);
   }
 
   /** 保存文件：本地 + 云端 */
@@ -2247,6 +2278,32 @@
     document.addEventListener('webkitfullscreenchange', onFsChange);
   }
 
+  /**
+   * 打开页面时同步云端内容，保证手机 / 电脑显示一致：
+   * · 作者本地有「未同步的改动」→ 跳过，避免丢稿
+   * · 其余情况（访客、或作者已同步）→ 始终采用云端最新
+   */
+  function checkRemoteUpdate() {
+    Store.cloudLoadMeta().then((res) => {
+      if (!res || !res.meta) return;
+      let appliedAt = 0, localAt = 0;
+      try {
+        appliedAt = Number(localStorage.getItem('timding.remoteAt') || 0);
+        localAt = Number(localStorage.getItem('timding.localAt') || 0);
+      } catch (e) {}
+
+      const hasNew = Number(res.at || 0) > appliedAt + 1000;
+      // 作者刚编辑过但还没同步 → 保留本地
+      if (isAuthor() && localAt > appliedAt + 1000) return;
+
+      Store.importAll(JSON.stringify({ meta: res.meta, files: {} })).then(() => {
+        try { localStorage.setItem('timding.remoteAt', String(Date.now())); } catch (e) {}
+        renderAll();
+        if (hasNew) toast(t('toast.remoteUpdated'));
+      });
+    });
+  }
+
   /* ---------------- 启动 ---------------- */
   function renderAll() {
     renderProfile();
@@ -2280,12 +2337,16 @@
 
     // 进门验证通过后再载入预设数据（未验证的访客拿不到 seed.json）
     startGate(() => {
-      if (!Store.fresh) return;                    // 本地已有数据，无需引导
+      if (!Store.fresh) {
+        checkRemoteUpdate();          // 本地已有数据 → 后台检查云端是否有更新
+        return;
+      }
       // 首次打开：优先从云端拉最新内容，云端没有再回退 seed.json
-      Store.cloudLoadMeta().then((meta) => {
-        if (meta) {
-          Store.importAll(JSON.stringify({ meta: meta, files: {} })).then(() => {
+      Store.cloudLoadMeta().then((res) => {
+        if (res && res.meta) {
+          Store.importAll(JSON.stringify({ meta: res.meta, files: {} })).then(() => {
             Store.fresh = false;
+            try { localStorage.setItem('timding.remoteAt', String(res.at || Date.now())); } catch (e) {}
             renderAll();
             toast(t('toast.cloudLoaded'));
           });
