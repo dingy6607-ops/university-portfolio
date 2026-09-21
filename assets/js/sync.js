@@ -14,9 +14,9 @@
   var GitHubSync = {
     DEFAULTS: {
       owner: 'dingy6607-ops',
-      repo: 'site-data',
+      repo: 'university-portfolio',          // 代码与数据同一个仓库
       branch: 'main',
-      path: 'seed.json',
+      path: 'assets/data/seed.json',
       token: ''
     },
     cfg: null,
@@ -32,6 +32,12 @@
         path: c.path || this.DEFAULTS.path,
         token: c.token || ''
       };
+      // 旧的数据仓库自动迁移到统一仓库（保留 Token）
+      if (this.cfg.repo === 'site-data') {
+        this.cfg.repo = this.DEFAULTS.repo;
+        this.cfg.path = this.DEFAULTS.path;
+        try { localStorage.setItem(CFG_KEY, JSON.stringify(this.cfg)); } catch (e) {}
+      }
       return this.cfg;
     },
 
