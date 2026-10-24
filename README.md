@@ -252,60 +252,59 @@ window.CDN_DATA_URL = 'https://cdn.jsdelivr.net/gh/dingy6607-ops/site-data@main/
 | 层 | 文件 | 作用 |
 | --- | --- | --- |
 | 构建 | `build.mjs` | 白名单发布：只把 `index.html`、`assets/`、`_headers` 等复制到 `dist/`，跳过一切隐藏文件、密钥、备份包；随后反向扫描 `dist/`，发现禁止内容直接让构建失败 |
-| 边缘 | `functions/_middleware.js` | 所有含隐藏路径（`/.git`、`/.env`…）或敏感后缀的请求**在边缘返回 403**，带 `no-store`，不会被缓存 |
+| 边缘 | `wrangler.jsonc` | `assets.directory = "./dist"` + `not_found_handling = "none"`：只发布白名单产物，未匹配路径直接 404，不回落 HTML |
 | 提交 | `scripts/guard.mjs` | 推送前检查暂存区与仓库，自动把敏感文件移出索引并中止推送 |
 
 辅助文件：`.gitignore`（源头拦截）、`_headers`（安全响应头与缓存策略）。
 
-> **不要添加 `_routes.json`**：未启用 Pages Functions 的项目会报 `Pages _routes.json is not supported`。它只用于收窄 Functions 的执行范围（性能优化），去掉后中间件依然对全部请求生效，安全性不受影响。
+> **不要添加 `_routes.json` 和 `functions/`**：前者是 Pages 专用（本项目会报 `Pages _routes.json is not supported`），后者只有 Pages 才识别，放在 Workers 项目里只会让 wrangler 误判部署类型。安全性由 `dist/` 白名单 + 404 保证。
 
-### 部署方式（按你的项目类型选一种）
+### 部署方式（本项目：Cloudflare Workers + Static Assets）
 
-**A. Git 集成（有 Build command / Build output directory 字段）**
+仓库根的 `wrangler.jsonc` 已固定配置，push 到 GitHub 后，Cloudflare 的 Workers Builds 会自动执行三步：
+
+| 步骤 | 命令 | 说明 |
+| --- | --- | --- |
+| 安装 | `bun install` | 无运行时依赖，秒级完成 |
+| 构建 | `npm run build` | 生成白名单 `dist/`（35 个文件） |
+| 部署 | `npx wrangler deploy` | 只发布 `dist/` |
+
+关键只有一行：
+
+```jsonc
+"assets": { "directory": "./dist" }
+```
+
+> **绝不能写成 `"."`**：那会把 `node_modules` 里的 `workerd`（134 MiB）当成静态资产，
+> 触发 `Asset too large`（Workers 单文件上限 25 MiB）。这是本项目首次自动部署失败的原因。
+
+在 Cloudflare 控制台 → Worker → **Settings → Build** 里确认：
 
 | 配置项 | 值 |
 | --- | --- |
 | Build command | `npm run build` |
-| Build output directory | `dist` |
+| Deploy command | `npx wrangler deploy` |
 
-`functions/` 保持在仓库根目录，Pages 会自动识别，**不要**放进 `dist/`。
+**如果以后迁到 Pages（Git 集成）**：Build command 填 `npm run build`，Output directory 填 `dist`。
 
-**B. Direct Upload / 拖拽上传（控制台没有构建配置）**
-
-双击 `打包发布.bat` 生成 `dist/`，然后**只上传 `dist` 文件夹**。
-项目根目录里有 `.git`，绝不能整个拖上去。
-
-> 拖拽上传不会带上 `functions/`，敏感路径返回 404（文件不存在）；要 403 请用 `npx wrangler pages deploy dist`。
-
-**C. Workers（Static Assets）**
-
-`wrangler.toml`：
-
-```toml
-name = "timding-portfolio"
-compatibility_date = "2025-10-01"
-
-[assets]
-directory = "./dist"
-not_found_handling = "404-page"
-```
-
-Workers 不支持 Pages 的 `functions/_middleware.js`，403 请用 Cloudflare **WAF 自定义规则**拦截。
-
-> **中**：无论哪种方式，核心都是**发布产物里不含 `.git` / `.env`**。构建配置只是手段，`dist/` 才是真正的边界。
-> **EN**: In every case the point is the same — the published artifact must not contain `.git` or `.env`. The build config is just the mechanism; `dist/` is the real boundary.
+> **中**：无论 Pages 还是 Workers，核心都是**发布产物里不含 `.git` / `.env`**。构建配置只是手段，`dist/` 才是真正的边界。
+> **EN**: On either platform the point is the same — the published artifact must not contain `.git` or `.env`. The build config is just the mechanism; `dist/` is the real boundary.
 
 ### 部署后验证
 
 ```bash
-curl -sI https://你的域名/.env            # 期望 403
-curl -sI https://你的域名/.git/HEAD       # 期望 403
-curl -sI https://你的域名/.git/config     # 期望 403
-curl -sI https://你的域名/.well-known/acme-challenge/test   # 期望 404（白名单）
+curl -sI https://你的域名/.env            # 期望 404
+curl -sI https://你的域名/.git/HEAD       # 期望 404
+curl -sI https://你的域名/.git/config     # 期望 404
 curl -sI https://你的域名/                # 期望 200
 ```
 
+这些路径返回 **404** 就是正确结果：文件不在 `dist/` 里，Workers 直接当作未匹配路径处理。
+
 `curl -I` 若返回 `cf-cache-status: HIT`，说明边缘还留着旧响应，需在 Cloudflare 控制台 **Caching → Purge Everything**。
+
+> 想返回 403 而不是 404，需要在 `wrangler.jsonc` 里加 `main` 入口 + `"run_worker_first": true`，
+> 在 Worker 中判断路径后主动返回 403。纯静态发布只有 404 与 200，没有中间态。
 
 ### 如果 `.env` 曾被公开访问
 

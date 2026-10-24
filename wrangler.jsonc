@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // 必须与 Cloudflare 上已有的 Worker 名称一致，否则会新建一个
+  "name": "timding-portfolio",
+  "compatibility_date": "2026-10-19",
+
+  "observability": {
+    "enabled": true
+  },
+
+  "assets": {
+    // 关键：只发布白名单构建产物。
+    // 绝不能写 "." —— 那会把 node_modules（134 MiB 的 workerd）、.git 一起当成静态资产。
+    "directory": "./dist",
+
+    // 未匹配到文件时返回普通 404（不回落 index.html，
+    // 否则 /.env 会返回 200 的 HTML）
+    "not_found_handling": "none"
+  }
+}
