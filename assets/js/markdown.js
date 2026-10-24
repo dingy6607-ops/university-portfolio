@@ -19,6 +19,23 @@
     return /^(https?:|mailto:|#|\/|\.\/|data:image\/)/i.test(s) ? s : '#';
   }
 
+  /** 把已转义的实体还原（公式内容需要原始 LaTeX） */
+  function unesc(s) {
+    return String(s)
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&');
+  }
+
+  /** LaTeX 公式占位（渲染由 app.js 的 hydrateMath 完成） */
+  function mathSpan(tex, display) {
+    var raw = unesc(tex).trim();
+    return '<span class="katex-tex" data-tex="' + encodeURIComponent(raw) +
+      '" data-display="' + (display ? 1 : 0) + '"></span>';
+  }
+
   var BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
   function inline(text) {
@@ -26,6 +43,9 @@
 
     // 行内代码
     s = s.replace(/`([^`]+)`/g, function (_, c) { return '<code>' + c + '</code>'; });
+    // LaTeX 公式：$$…$$ 独立公式块，$…$ 行内公式（渲染交给 KaTeX）
+    s = s.replace(/\$\$([^$]+?)\$\$/g, function (_, tex) { return mathSpan(tex, true); });
+    s = s.replace(/\$([^\s$](?:[^$\n]*[^\s$])?)\$/g, function (_, tex) { return mathSpan(tex, false); });
     // 图片（asset:文件ID 为站内上传的图片，渲染后再异步填充真实地址）
     s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;([^&]*)&quot;)?\)/g, function (_, alt, url) {
       if (String(url).indexOf('asset:') === 0) {

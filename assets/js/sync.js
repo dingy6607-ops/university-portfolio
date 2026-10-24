@@ -32,8 +32,8 @@
         path: c.path || this.DEFAULTS.path,
         token: c.token || ''
       };
-      // 旧的数据仓库自动迁移到统一仓库（保留 Token）
-      if (this.cfg.repo === 'site-data') {
+      // 旧配置自动迁移到统一的仓库与路径（保留 Token）
+      if (this.cfg.repo === 'site-data' || this.cfg.path === 'seed.json') {
         this.cfg.repo = this.DEFAULTS.repo;
         this.cfg.path = this.DEFAULTS.path;
         try { localStorage.setItem(CFG_KEY, JSON.stringify(this.cfg)); } catch (e) {}

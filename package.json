@@ -1,0 +1,15 @@
+{
+  "name": "timding-portfolio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "丁一铭 Tim Ding · 个人博客与作品集（纯静态，白名单构建）",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "guard": "node scripts/guard.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

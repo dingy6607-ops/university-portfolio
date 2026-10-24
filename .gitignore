@@ -1,0 +1,40 @@
+# ===== 敏感信息：绝不进入 Git =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.*
+credentials.*
+
+# ===== 系统与编辑器 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===== 备份与数据库导出 =====
+*.bak
+*.old
+*.orig
+*.save
+*.sql
+*.sqlite
+*.db
+*.log
+
+# ===== 依赖与构建产物 =====
+node_modules/
+dist/
+.wrangler/
+worker/
+
+# ===== 本地临时文件 =====
+*.tmp
+*.temp

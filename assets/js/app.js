@@ -991,6 +991,7 @@
     hint.textContent = t('editor.mdConverted');
     hydrateAssets(ed);
     hydrateCharts(ed);
+    hydrateMath(ed);
     updateWordCount();
 
     $('#deletePostBtn').hidden = !post;
@@ -1032,6 +1033,37 @@
     return asHtml ? stripTags(b.raw) : Markdown.plain(b.raw);
   }
 
+  /**
+   * 保存文章前清理正文：
+   * 只保留文档/图片/图表的占位与数据属性，去掉渲染产物
+   * （canvas、blob: 临时链接、drawn/loaded 状态标记），避免失效链接被存进去
+   */
+  function cleanBodyHtml(html) {
+    const doc = new DOMParser().parseFromString('<div id="cleanRoot">' + (html || '') + '</div>', 'text/html');
+    const root = doc.getElementById('cleanRoot');
+    if (!root) return html || '';
+
+    Array.prototype.forEach.call(root.querySelectorAll('.md-file'), (el) => {
+      el.innerHTML = '';
+      el.removeAttribute('data-drawn');
+      if (/^ph-/.test(el.id || '')) el.removeAttribute('id');
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('.md-chart'), (el) => {
+      el.innerHTML = '';
+      el.removeAttribute('data-drawn');
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('.katex-tex'), (el) => {
+      el.innerHTML = '';
+      el.removeAttribute('data-drawn');
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('img.md-asset'), (img) => {
+      img.removeAttribute('src');
+      img.removeAttribute('data-hydrated');
+      img.removeAttribute('data-loaded');
+    });
+    return root.innerHTML;
+  }
+
   /** 内容看起来像 HTML 吗（含标签） */
   function looksLikeHtml(s) {
     return /<[a-z][^>]*>/i.test(String(s || ''));
@@ -1050,7 +1082,9 @@
     const asHtml = b.fmt === 'html' && looksLikeHtml(b.raw);
     el.innerHTML = asHtml ? sanitizeHtml(b.raw) : Markdown.render(b.raw);
     hydrateAssets(el);
+    hydrateFiles(el);
     hydrateCharts(el);
+    hydrateMath(el);
   }
 
   /** 把文章中嵌入的图表占位渲染成真实 Canvas */
@@ -1075,6 +1109,323 @@
         cap.textContent = el.dataset.name;
         el.appendChild(cap);
       }
+    });
+  }
+
+  /* ---------------- LaTeX 数学公式（KaTeX） ---------------- */
+  const KATEX_JS = 'assets/js/vendor/katex/katex.min.js';
+  const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js';
+
+  function withKatex(cb, onFail) {
+    if (window.katex) { cb(); return; }
+    const load = (src, next) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = cb;
+      s.onerror = next;
+      document.head.appendChild(s);
+    };
+    load(KATEX_JS, () => load(KATEX_CDN, onFail || function () {}));
+  }
+
+  const katexCache = {};
+
+  function texOf(el) {
+    let tex = '';
+    try { tex = decodeURIComponent(el.dataset.tex || ''); } catch (e) { tex = el.dataset.tex || ''; }
+    return tex;
+  }
+
+  /** 把 .katex-tex 占位（data-tex）渲染成公式；KaTeX 不可用时退化成原文 */
+  function hydrateMath(root) {
+    const list = $$('.katex-tex', root || document);
+    if (!list.length) return;
+
+    const plain = () => {
+      list.forEach((el) => {
+        if (el.dataset.drawn === '1') return;
+        el.dataset.drawn = '1';
+        el.textContent = texOf(el);
+      });
+    };
+
+    withKatex(() => {
+      list.forEach((el) => {
+        if (el.dataset.drawn === '1') return;
+        el.dataset.drawn = '1';
+        const tex = texOf(el);
+        if (!tex) return;
+        const display = el.dataset.display === '1';
+        const key = (display ? 'D:' : 'I:') + tex;
+        try {
+          if (katexCache[key]) { el.innerHTML = katexCache[key]; return; }
+          window.katex.render(tex, el, { displayMode: display, throwOnError: false, output: 'html' });
+          katexCache[key] = el.innerHTML;
+        } catch (e) {
+          el.textContent = tex;
+        }
+      });
+    }, plain);
+  }
+
+  /** 编辑器里插入公式 */
+  function insertMath() {
+    const input = prompt(t('editor.mathPh'), 'E = mc^2');
+    if (input === null) return;
+    let s = String(input).trim();
+    if (!s) { toast(t('editor.mathEmpty'), true); return; }
+    const display = /^\$\$[\s\S]*\$\$$/.test(s) || /\n/.test(s) || s.indexOf('\\begin') === 0;
+    s = s.replace(/^\$\$/, '').replace(/\$\$$/, '').trim();
+    insertRichHtml('<span class="katex-tex" data-tex="' + encodeURIComponent(s) + '" data-display="' +
+      (display ? '1' : '0') + '"></span>' + (display ? '<p><br></p>' : '&nbsp;'));
+    hydrateMath($('#postEditor'));
+    updateWordCount();
+  }
+
+  /* ---------------- 文章内嵌文档（PDF / DOCX） ---------------- */
+  /** 给任意 Promise 加超时兜底 */
+  function withTimeout(promise, ms, fallback) {
+    return Promise.race([
+      Promise.resolve(promise).catch(() => fallback),
+      new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
+    ]);
+  }
+
+
+  function fileHeadHtml(name, url, kind) {
+    return '<div class="file-head">' +
+      '<span class="file-kind">' + esc(String(kind || 'file').toUpperCase()) + '</span>' +
+      '<span class="file-name">' + esc(name) + '</span>' +
+      '<span class="file-actions">' +
+      '<a class="btn small" href="' + url + '" target="_blank" rel="noopener">' + esc(t('file.open')) + '</a>' +
+      '<a class="btn small" href="' + url + '" download="' + esc(name) + '">' + esc(t('file.download')) + '</a>' +
+      '</span></div>';
+  }
+
+  function fileFallbackCard(name, url, tip) {
+    return '<div class="md-file-card">' +
+      fileHeadHtml(name, url, (String(name).split('.').pop() || 'file')) +
+      '<p class="file-tip">' + esc(tip || t('file.cannot')) + '</p></div>';
+  }
+
+  /** pdf → 内嵌阅读；docx → mammoth 转 HTML 阅读；txt/md/csv → 文本；其它 → 下载卡片 */
+  function hydrateFiles(root) {
+    $$('.md-file', root).forEach((el) => {
+      if (el.dataset.drawn === '1') return;
+      el.dataset.drawn = '1';
+      const id = el.dataset.asset || '';
+      const name = el.dataset.name || 'file';
+      const type = el.dataset.type || '';
+      const ext = (String(name).match(/\.([a-zA-Z0-9]+)$/) || ['', ''])[1].toLowerCase();
+      el.innerHTML = '<p class="file-tip">' + esc(t('file.loading')) + '</p>';
+
+      // 读取加硬超时，避免永远停在「正在加载文档…」
+      withTimeout(Store.getFile(id), 6000, null)
+        .then((f) => (f ? Promise.resolve(f) : withTimeout(Store.cloudGetFile(id), 10000, null)))
+        .then((f) => {
+          if (!f) {
+            el.innerHTML = '<div class="md-file-card"><p class="file-tip">' + esc(t('editor.imgMissing')) + '</p></div>';
+            return;
+          }
+          const url = URL.createObjectURL(f.blob);
+          assetUrls.push(url);
+          while (assetUrls.length > 40) URL.revokeObjectURL(assetUrls.shift());
+
+          if (type === 'application/pdf' || ext === 'pdf') {
+            renderPdf(el, f.blob, name, url);       // pdf.js 渲染（手机也能看）
+          } else if (ext === 'docx') {
+            renderDocx(el, f.blob, name, url);
+          } else if (ext === 'txt' || ext === 'md' || ext === 'csv') {
+            readText(f.blob).then((txt) => {
+              el.innerHTML = fileHeadHtml(name, url, ext) +
+                '<div class="file-text">' + (ext === 'md'
+                  ? '<div class="markdown-body">' + Markdown.render(txt) + '</div>'
+                  : '<pre>' + esc(txt) + '</pre>') + '</div>';
+            });
+          } else {
+            el.innerHTML = fileFallbackCard(name, url);
+          }
+        })
+        .catch(() => { el.innerHTML = fileFallbackCard(name, '#'); });
+    });
+  }
+
+  // Word 转换库：优先用项目里的本地副本，加载不到再回退 CDN
+  const MAMMOTH_LOCAL = 'assets/js/vendor/mammoth.min.js';
+  const MAMMOTH_CDN = 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js';
+
+  /** 按需加载 mammoth，加载成功后执行 cb */
+  function withMammoth(cb, onFail) {
+    if (window.mammoth) { cb(); return; }
+    const load = (src, failNext) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = cb;
+      s.onerror = failNext;
+      document.head.appendChild(s);
+    };
+    load(MAMMOTH_LOCAL, () => load(MAMMOTH_CDN, onFail || function () {}));
+  }
+
+  /** DOCX：转成 HTML 后在文章里内嵌阅读 */
+  function renderDocx(el, blob, name, url) {
+    const fallback = () => { el.innerHTML = fileFallbackCard(name, url, t('file.convertFail')); };
+    if (!blob || !blob.arrayBuffer) { fallback(); return; }
+    withMammoth(() => {
+      blob.arrayBuffer()
+        .then((ab) => window.mammoth.convertToHtml({ arrayBuffer: ab }))
+        .then((res) => {
+          el.innerHTML = fileHeadHtml(name, url, 'docx') +
+            '<div class="docx-body markdown-body">' + sanitizeHtml((res && res.value) || '') + '</div>';
+        })
+        .catch(fallback);
+    }, fallback);
+  }
+
+  /** DOCX 导入：把 Word 内容直接变成正文（可继续编辑） */
+  function importDocxToBody(file) {
+    const fail = () => toast(t('file.importFail'), true);
+    if (!file || !file.arrayBuffer) { fail(); return; }
+    withMammoth(() => {
+      file.arrayBuffer()
+        .then((ab) => window.mammoth.convertToHtml({ arrayBuffer: ab }))
+        .then((res) => {
+          if (!$('#postTitle').value.trim()) {
+            $('#postTitle').value = String(file.name).replace(/\.docx$/i, '');
+          }
+          insertRichHtml(sanitizeHtml((res && res.value) || ''));
+          updateWordCount();
+          toast(t('file.imported'));
+        })
+        .catch(fail);
+    }, fail);
+  }
+
+  // PDF 渲染库：优先用项目里的本地副本，加载不到再回退 CDN
+  const PDFJS_LOCAL = 'assets/js/vendor/pdf.min.js';
+  const PDFJS_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+  const PDFJS_WORKER = 'assets/js/vendor/pdf.worker.min.js';
+
+  function withPdfJs(cb, onFail) {
+    if (window.pdfjsLib) { cb(); return; }
+    const load = (src, failNext) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = cb;
+      s.onerror = failNext;
+      document.head.appendChild(s);
+    };
+    load(PDFJS_LOCAL, () => load(PDFJS_CDN, onFail || function () {}));
+  }
+
+  /** PDF：逐页渲染成图片，任何浏览器都能直接看到内容 */
+  function renderPdf(el, blob, name, url) {
+    const iframe = () => {
+      el.innerHTML = fileHeadHtml(name, url, 'pdf') +
+        '<iframe class="file-view" src="' + url + '" title="' + esc(name) + '"></iframe>';
+    };
+    if (!blob || !blob.arrayBuffer) { iframe(); return; }
+
+    withPdfJs(() => {
+      const pdfjs = window.pdfjsLib;
+      if (!pdfjs) { iframe(); return; }
+      try { pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; } catch (e) {}
+
+      blob.arrayBuffer()
+        .then((ab) => pdfjs.getDocument({ data: ab }).promise)
+        .then((pdf) => {
+          el.innerHTML = fileHeadHtml(name, url, 'pdf');
+          const box = document.createElement('div');
+          box.className = 'pdf-pages';
+          el.appendChild(box);
+
+          const status = document.createElement('p');
+          status.className = 'file-tip';
+          status.textContent = t('file.loading');
+          el.appendChild(status);
+
+          const total = pdf.numPages || 0;
+          // 手机端内存有限：降低分辨率 + 少渲染几页，避免渲染失败
+          const isMobile = window.innerWidth < 700;
+          const maxPages = isMobile ? Math.min(total, 10) : Math.min(total, 40);
+          let page = 1;
+          const drawNext = () => {
+            if (page > maxPages) {
+              // 一页都没画出来 → 说明渲染失败，退回 iframe / 下载卡片
+              if (!box.querySelector('canvas')) { iframe(); return Promise.resolve(); }
+              if (status && status.parentNode) status.parentNode.removeChild(status);
+              if (total > maxPages) {
+                const tip = document.createElement('p');
+                tip.className = 'file-tip';
+                tip.textContent = t('file.morePages', { n: total, m: maxPages });
+                el.appendChild(tip);
+              }
+              return Promise.resolve();
+            }
+            return pdf.getPage(page).then((pg) => {
+              if (status) status.textContent = t('file.pageOf', { a: page, b: total });
+              const base = pg.getViewport({ scale: 1 });
+              const width = box.clientWidth || 760;
+              const scale = Math.min(isMobile ? 1.2 : 2, width / (base.width || 1)) || 1;
+              const vp = pg.getViewport({ scale: scale });
+              const cv = document.createElement('canvas');
+              cv.className = 'pdf-page';
+              cv.width = Math.ceil(vp.width);
+              cv.height = Math.ceil(vp.height);
+              box.appendChild(cv);
+              return pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise
+                .catch(() => null)
+                .then(() => {
+                  try { pg.cleanup(); } catch (e) {}   // 释放该页资源，降低内存占用
+                  page++;
+                  return drawNext();
+                });
+            }).catch(() => { page++; return drawNext(); });
+          };
+          return drawNext();
+        })
+        .catch(iframe);
+    }, iframe);
+  }
+
+  /** 编辑器里插入文档文件 */
+  function insertRichFiles(files) {
+    const list = Array.prototype.slice.call(files || []);
+    if (!list.length) return;
+
+    // Word 先问一句：转成正文（可编辑）还是作为文档嵌入
+    const docs = [];
+    list.forEach((f) => {
+      const ext = (String(f.name).match(/\.([a-zA-Z0-9]+)$/) || ['', ''])[1].toLowerCase();
+      if (ext === 'docx' && confirm(t('file.askImport'))) { importDocxToBody(f); return; }
+      docs.push(f);
+    });
+    if (!docs.length) return;
+
+    let done = 0;
+    docs.forEach((f) => {
+      const fileId = uid();
+      const phId = 'ph-' + fileId;
+
+      // ① 立刻插入占位块，让作者马上看到反馈（即使保存较慢）
+      insertRichHtml('<div class="md-file" id="' + phId + '" data-asset="' + fileId +
+        '" data-name="' + esc(f.name) + '" data-type="' + esc(f.type || '') + '" data-size="' + (f.size || 0) +
+        '"></div><p><br></p>');
+      const holder = document.getElementById(phId);
+      if (holder) holder.innerHTML = '<p class="file-tip">' + esc(t('file.loading')) + '</p>';
+
+      // ② 保存文件（本地 + 云端），完成后渲染查看器
+      saveFile(fileId, f).then(() => {
+        done++;
+        toast(t('file.inserted') + ' (' + done + ')');
+        hydrateFiles($('#postEditor'));
+      }).catch(() => {
+        if (holder) {
+          holder.innerHTML = '<div class="md-file-card"><p class="file-tip">' +
+            esc(t('editor.imgFail')) + '</p></div>';
+        }
+        toast(t('editor.imgFail'), true);
+      });
     });
   }
 
@@ -1152,6 +1503,9 @@
       $('#tablePanel').hidden = true;
     });
     $('#mdChartBtn').addEventListener('click', () => { if (!guard()) return; chartInsertMode = true; openChartModal(null); });
+    $('#mdMathBtn').addEventListener('click', () => { if (!guard()) return; insertMath(); });
+    $('#mdFileBtn').addEventListener('click', () => { if (!guard()) return; $('#mdFileInput').click(); });
+    $('#mdFileInput').addEventListener('change', (e) => { insertRichFiles(e.target.files); e.target.value = ''; });
 
     const ed = $('#postEditor');
     ed.addEventListener('input', updateWordCount);
@@ -1167,7 +1521,11 @@
 
     $('#postModalFile').addEventListener('change', (e) => {
       const files = Array.prototype.slice.call(e.target.files || []);
+      const pdfs = [];
       files.forEach((f) => {
+        const ext = (String(f.name).match(/\.([a-zA-Z0-9]+)$/) || ['', ''])[1].toLowerCase();
+        if (ext === 'pdf') { pdfs.push(f); return; }          // PDF → 文档块内嵌阅读
+        if (ext === 'docx') { importDocxToBody(f); return; }  // Word → 转成正文
         readText(f).then((txt) => {
           const head = txt.match(/^#\s+(.+)$/m);
           if (!$('#postTitle').value.trim()) {
@@ -1179,6 +1537,7 @@
           toast(t('toast.importPost', { name: f.name }));
         }).catch(() => toast(t('toast.readFail', { name: f.name }), true));
       });
+      if (pdfs.length) insertRichFiles(pdfs);
       e.target.value = '';
     });
 
@@ -1186,7 +1545,7 @@
       const title = $('#postTitle').value.trim();
       if (!title) return toast(t('toast.noTitle'), true);
       const summary = $('#postSummary').value.trim();
-      const body = sanitizeHtml($('#postEditor').innerHTML);
+      const body = sanitizeHtml(cleanBodyHtml($('#postEditor').innerHTML));
       const data = {
         date: $('#postDate').value || today(),
         tags: $('#postTags').value.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
@@ -1883,27 +2242,49 @@
     // 一键同步到 GitHub
     $('#ghSyncBtn').addEventListener('click', () => {
       if (!guard()) return;
+
+      // 事前检查：没配 Token 立刻提示，不发无谓请求
+      if (!GitHubSync.cfg || !GitHubSync.cfg.token) {
+        toast(t('sync.noToken'), true);
+        return;
+      }
+
       const btn = $('#ghSyncBtn');
       const label = btn.textContent;
       btn.disabled = true;
       btn.textContent = t('sync.syncing');
-      // ① 先回写本地文件（seed.json + index.html），② 再提交到 GitHub
-      Promise.resolve(writeLocalFiles())
+
+      const restore = (ok, msg) => {
+        btn.disabled = false;
+        btn.textContent = label;
+        toast(msg, !ok);
+      };
+
+      // ① 回写本地文件（seed.json + index.html）② 推 KV ③ 提交 GitHub
+      const job = Promise.resolve()
+        .then(() => writeLocalFiles())
         .then((local) => Store.exportAll().then((json) => ({ json: json, local: local })))
-        .then((pack) => Store.cloudSaveMeta().then(() => pack))      // ② 推 KV（实时）
+        .then((pack) => Store.cloudSaveMeta().then(() => pack))
         .then((pack) => GitHubSync.commit(pack.json, 'auto: update site data via Author Mode UI')
-          .then((res) => ({ res: res, local: pack.local })))
+          .then((res) => ({ res: res, local: pack.local })));
+
+      // 全程 30 秒超时 + 异常兜底：任何情况都有提示，按钮必定恢复
+      withTimeout(job, 30000, { timeout: true })
         .then((out) => {
-          btn.disabled = false;
-          btn.textContent = label;
-          if (out.res && out.res.ok) {
-            toast(t('sync.ok') + (out.local ? t('sync.localSync') : ''));
-          } else {
-            const msg = (res && res.error === 'NO_TOKEN')
-              ? t('sync.noToken')
-              : ((res && res.error) || t('sync.fail'));
-            toast(msg + ' · ' + t('sync.fallback'), true);
+          if (!out || out.timeout) {
+            restore(false, t('sync.fail') + ' · ' + t('sync.fallback'));
+            return;
           }
+          if (out.res && out.res.ok) {
+            restore(true, t('sync.ok') + (out.local ? t('sync.localSync') : ''));
+            return;
+          }
+          const err = (out.res && out.res.error) || '';
+          const msg = err === 'NO_TOKEN' ? t('sync.noToken') : (err || t('sync.fail'));
+          restore(false, msg + ' · ' + t('sync.fallback'));
+        })
+        .catch((e) => {
+          restore(false, ((e && e.message) || t('sync.fail')) + ' · ' + t('sync.fallback'));
         });
     });
 
@@ -2315,6 +2696,18 @@
   }
 
   function init() {
+    // 应急入口：?reset=1 清空本机旧数据与验证状态，重新从云端拉取（手机端缓存顽固时用）
+    try {
+      const params = new URLSearchParams(location.search);
+      if (params.get('reset') === '1') {
+        ['timding.meta.v1', 'timding.gate', 'timding.remoteAt', 'timding.localAt'].forEach((k) => {
+          localStorage.removeItem(k);
+        });
+        location.replace(location.pathname);
+        return;
+      }
+    } catch (e) {}
+
     Store.initCloud();
     Store.load(SEED);
     I18N.init();

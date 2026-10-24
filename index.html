@@ -6,6 +6,7 @@
 <title>丁一铭 Tim Ding · 个人博客 &amp; 作品集</title>
 <meta name="description" content="丁一铭（Tim Ding）的个人博客与作品集：人工智能专业大一在读，记录学习文章、课程作品、数据图表与成长轨迹。" />
 <link rel="stylesheet" href="assets/css/style.css" />
+<link rel="stylesheet" href="assets/js/vendor/katex/katex.min.css" />
 </head>
 <body>
 
@@ -281,7 +282,10 @@
         <button class="tool" id="mdImageBtn" data-i18n-title="editor.image" title="插入图片">🖼</button>
         <button class="tool" id="mdTableBtn" data-i18n-title="editor.table" title="插入表格">▦</button>
         <button class="tool" id="mdChartBtn" data-i18n-title="editor.chart" title="插入图表">📊</button>
+        <button class="tool" id="mdMathBtn" data-i18n-title="editor.math" title="插入公式（LaTeX）">∑</button>
+        <button class="tool" id="mdFileBtn" data-i18n-title="editor.file" title="插入文档（PDF / Word）">📄</button>
         <input type="file" id="mdImageInput" accept="image/*" multiple hidden />
+        <input type="file" id="mdFileInput" accept=".pdf,.docx,.doc,.txt,.md,.csv" multiple hidden />
         <span class="spacer"></span>
         <span class="muted small" id="postWordCount"></span>
       </div>
@@ -297,7 +301,7 @@
         <span class="spacer"></span>
         <span class="muted small" id="postLangHint"></span>
         <label class="btn btn-ghost small" for="postModalFile" data-i18n="post.import">导入文件</label>
-        <input type="file" id="postModalFile" accept=".md,.markdown,.txt,.html" hidden />
+        <input type="file" id="postModalFile" accept=".md,.markdown,.txt,.html,.docx,.pdf" multiple hidden />
       </div>
     </div>
     <div class="modal-foot">

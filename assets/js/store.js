@@ -106,12 +106,21 @@
         return new Promise(function (resolve) {
           var tx;
           try { tx = db.transaction(STORE_NAME, 'readwrite'); } catch (e) { return resolve(null); }
+          var settled = false;
+          var finish = function (v) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(v);
+          };
+          // 事务兜底：4 秒没结果就放弃 IndexedDB，改用 localStorage
+          var timer = setTimeout(function () { finish(null); }, 4000);
           tx.objectStore(STORE_NAME).put({
             id: id, name: file.name, type: file.type || '', size: file.size, blob: file, at: Date.now()
           });
-          tx.oncomplete = function () { resolve('idb'); };
-          tx.onerror = function () { resolve(null); };
-          tx.onabort = function () { resolve(null); };
+          tx.oncomplete = function () { finish('idb'); };
+          tx.onerror = function () { finish(null); };
+          tx.onabort = function () { finish(null); };
         });
       }).then(function (where) {
         if (where) return where;
@@ -138,9 +147,17 @@
         return new Promise(function (resolve) {
           var tx;
           try { tx = db.transaction(STORE_NAME, 'readonly'); } catch (e) { return resolve(null); }
+          var settled = false;
+          var finish = function (v) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(v);
+          };
+          var timer = setTimeout(function () { finish(null); }, 4000);   // 读取兜底超时
           var rq = tx.objectStore(STORE_NAME).get(id);
-          rq.onsuccess = function () { resolve(rq.result || null); };
-          rq.onerror = function () { resolve(null); };
+          rq.onsuccess = function () { finish(rq.result || null); };
+          rq.onerror = function () { finish(null); };
         });
       }).then(function (rec) {
         if (rec && rec.blob) return { blob: rec.blob, name: rec.name, type: rec.type, size: rec.size };
@@ -177,7 +194,8 @@
       var out = { version: 1, exportedAt: new Date().toISOString(), meta: this.meta, files: {} };
       var ids = this.meta.works.map(function (w) { return w.fileId; }).filter(Boolean);
       // 文章正文里插入的图片（asset:文件ID）
-      var re = /asset:([A-Za-z0-9_-]+)/g;
+      // 同时匹配 Markdown 的 asset:ID 与富文本里的 data-asset="ID"（文章内嵌的图片 / PDF / Word）
+      var re = /(?:asset:|data-asset=["']?)([A-Za-z0-9_-]+)/g;
       (this.meta.posts || []).forEach(function (p) {
         [p.body, p.bodyEn].forEach(function (b) {
           var m;

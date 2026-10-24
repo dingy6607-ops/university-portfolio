@@ -240,4 +240,97 @@ window.CDN_DATA_URL = 'https://cdn.jsdelivr.net/gh/dingy6607-ops/site-data@main/
 
 ---
 
+## 十二、安全部署（重要）/ Secure Deployment
+
+### 为什么会出现 `/.git/`、`/.env` 可访问
+
+- **中**：之前 Cloudflare Pages 的**构建输出目录设成了仓库根**，构建时克隆出来的 `.git/` 目录被当成静态资源一起发布；仓库又没有 `.gitignore`，`.env` 也可能被 `git add -A` 带上去。
+- **EN**: The Pages **build output directory was the repository root**, so the cloned `.git/` folder was published as static assets; the repo had no `.gitignore`, so `.env` could be committed by `git add -A` too.
+
+### 现在的三层防护
+
+| 层 | 文件 | 作用 |
+| --- | --- | --- |
+| 构建 | `build.mjs` | 白名单发布：只把 `index.html`、`assets/`、`_headers` 等复制到 `dist/`，跳过一切隐藏文件、密钥、备份包；随后反向扫描 `dist/`，发现禁止内容直接让构建失败 |
+| 边缘 | `functions/_middleware.js` | 所有含隐藏路径（`/.git`、`/.env`…）或敏感后缀的请求**在边缘返回 403**，带 `no-store`，不会被缓存 |
+| 提交 | `scripts/guard.mjs` | 推送前检查暂存区与仓库，自动把敏感文件移出索引并中止推送 |
+
+辅助文件：`.gitignore`（源头拦截）、`_headers`（安全响应头与缓存策略）。
+
+> **不要添加 `_routes.json`**：未启用 Pages Functions 的项目会报 `Pages _routes.json is not supported`。它只用于收窄 Functions 的执行范围（性能优化），去掉后中间件依然对全部请求生效，安全性不受影响。
+
+### 部署方式（按你的项目类型选一种）
+
+**A. Git 集成（有 Build command / Build output directory 字段）**
+
+| 配置项 | 值 |
+| --- | --- |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+
+`functions/` 保持在仓库根目录，Pages 会自动识别，**不要**放进 `dist/`。
+
+**B. Direct Upload / 拖拽上传（控制台没有构建配置）**
+
+双击 `打包发布.bat` 生成 `dist/`，然后**只上传 `dist` 文件夹**。
+项目根目录里有 `.git`，绝不能整个拖上去。
+
+> 拖拽上传不会带上 `functions/`，敏感路径返回 404（文件不存在）；要 403 请用 `npx wrangler pages deploy dist`。
+
+**C. Workers（Static Assets）**
+
+`wrangler.toml`：
+
+```toml
+name = "timding-portfolio"
+compatibility_date = "2025-10-01"
+
+[assets]
+directory = "./dist"
+not_found_handling = "404-page"
+```
+
+Workers 不支持 Pages 的 `functions/_middleware.js`，403 请用 Cloudflare **WAF 自定义规则**拦截。
+
+> **中**：无论哪种方式，核心都是**发布产物里不含 `.git` / `.env`**。构建配置只是手段，`dist/` 才是真正的边界。
+> **EN**: In every case the point is the same — the published artifact must not contain `.git` or `.env`. The build config is just the mechanism; `dist/` is the real boundary.
+
+### 部署后验证
+
+```bash
+curl -sI https://你的域名/.env            # 期望 403
+curl -sI https://你的域名/.git/HEAD       # 期望 403
+curl -sI https://你的域名/.git/config     # 期望 403
+curl -sI https://你的域名/.well-known/acme-challenge/test   # 期望 404（白名单）
+curl -sI https://你的域名/                # 期望 200
+```
+
+`curl -I` 若返回 `cf-cache-status: HIT`，说明边缘还留着旧响应，需在 Cloudflare 控制台 **Caching → Purge Everything**。
+
+### 如果 `.env` 曾被公开访问
+
+1. **先轮换所有密钥**（数据库、API、SMTP、支付），删除文件不能撤回已泄露的凭据
+2. 清空 Cloudflare 缓存
+3. 从 Git 历史里清除：
+
+```bash
+git rm --cached .env
+git commit -m "chore: remove .env"
+git push
+# 历史提交里也存在时（会改写历史，谨慎）：
+# git filter-repo --path .env --invert-paths
+```
+
+4. 若 `/.git/HEAD` 曾返回 200，视为**整个仓库源码与历史提交已泄露**，历史中出现过的密钥同样要轮换。
+
+### 本地预览构建结果
+
+```bash
+npm run build     # 生成 dist/
+npm run check     # 只做安全检查
+npm run guard     # 提交前检查
+```
+
+---
+
 © 2026 丁一铭 Tim Ding · 用 HTML / CSS / JavaScript 手工搭建 / Hand-built with HTML / CSS / JavaScript
